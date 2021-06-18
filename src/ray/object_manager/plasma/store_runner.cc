@@ -91,7 +91,7 @@ void PlasmaStoreRunner::Start(ray::SpillObjectsCallback spill_objects_callback,
                                  RayConfig::instance().object_store_full_delay_ms(),
                                  spill_objects_callback, object_store_full_callback,
                                  add_object_callback, delete_object_callback));
-    plasma_config = store_->GetPlasmaStoreInfo();
+    plasma_config = store_->GetPlasmaStoreConfig();
 
     // We are using a single memory-mapped file by mallocing and freeing a single
     // large amount of space up front. According to the documentation,

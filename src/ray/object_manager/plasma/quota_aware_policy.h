@@ -56,10 +56,9 @@ class QuotaAwarePolicy : public EvictionPolicy {
  public:
   /// Construct a quota-aware eviction policy.
   ///
-  /// \param store_info Information about the Plasma store that is exposed
-  ///        to the eviction policy.
+  /// \param object_table Reference to the plasma store object table.
   /// \param max_size Max size in bytes total of objects to store.
-  explicit QuotaAwarePolicy(PlasmaStoreInfo *store_info, int64_t max_size);
+  explicit QuotaAwarePolicy(const ObjectTable &object_table, int64_t max_size);
   void ObjectCreated(const ObjectID &object_id, Client *client, bool is_create) override;
   bool SetClientQuota(Client *client, int64_t output_memory_quota) override;
   bool EnforcePerClientQuota(Client *client, int64_t size, bool is_create,

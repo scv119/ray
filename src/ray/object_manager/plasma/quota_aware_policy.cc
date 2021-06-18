@@ -26,8 +26,8 @@
 
 namespace plasma {
 
-QuotaAwarePolicy::QuotaAwarePolicy(PlasmaStoreInfo *store_info, int64_t max_size)
-    : EvictionPolicy(store_info, max_size) {}
+QuotaAwarePolicy::QuotaAwarePolicy(const ObjectTable &object_table, int64_t max_size)
+    : EvictionPolicy(object_table, max_size) {}
 
 bool QuotaAwarePolicy::HasQuota(Client *client, bool is_create) {
   if (!is_create) {
