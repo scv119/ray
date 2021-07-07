@@ -17,8 +17,6 @@
 
 #include "ray/object_manager/plasma/object_store.h"
 
-#include "ray/object_manager/plasma/plasma_allocator.h"
-
 namespace plasma {
 
 ObjectStore::ObjectStore() : object_table_() {}
@@ -80,14 +78,15 @@ const LocalObject *ObjectStore::SealObject(const ObjectID &object_id) {
   return entry;
 }
 
-void ObjectStore::DeleteObject(const ObjectID &object_id) {
+Allocation ObjectStore::DeleteObject(const ObjectID &object_id) {
   auto entry = GetObject(object_id);
-  PlasmaAllocator::Free(entry->allocation);
+  Allocation allocation = std::move(entry->allocation);
   if (entry->state == ObjectState::PLASMA_CREATED) {
     num_bytes_unsealed_ -= entry->GetObjectSize();
     num_objects_unsealed_--;
   }
   object_table_.erase(object_id);
+  return allocation;
 }
 
 size_t ObjectStore::GetNumBytesCreatedTotal() const { return num_bytes_created_total_; }
@@ -95,12 +94,6 @@ size_t ObjectStore::GetNumBytesCreatedTotal() const { return num_bytes_created_t
 size_t ObjectStore::GetNumBytesUnsealed() const { return num_bytes_unsealed_; };
 
 size_t ObjectStore::GetNumObjectsUnsealed() const { return num_objects_unsealed_; };
-
-int64_t ObjectStore::GetNumBytesAllocated() const { return PlasmaAllocator::Allocated(); }
-
-int64_t ObjectStore::GetNumBytesCapacity() const {
-  return PlasmaAllocator::GetFootprintLimit();
-}
 
 void ObjectStore::GetDebugDump(std::stringstream &buffer) const {
   size_t num_objects_spillable = 0;
