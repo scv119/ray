@@ -152,23 +152,21 @@ void create_and_mmap_buffer(int64_t size, void **pointer, int *fd) {
   }
 
 #ifdef __linux__
-  // For fallback allocation, use fallocate to ensure follow up access to this
+  // use fallocate to ensure follow up access to this
   // mmaped file doesn't cause SIGBUS. Only supported on Linux.
-  if (allocated_once && RayConfig::instance().plasma_unlimited()) {
-    RAY_LOG(DEBUG) << "Preallocating fallback allocation using fallocate";
-    int ret = fallocate(*fd, /*mode*/ 0, /*offset*/ 0, size);
-    if (ret != 0) {
-      if (ret == EOPNOTSUPP || ret == ENOSYS) {
-        // in case that fallocate is not supported by current filesystem or kernel,
-        // we continue to mmap
-        RAY_LOG(DEBUG) << "fallocate is not supported: " << std::strerror(errno);
-      } else {
-        // otherwise we short circuit the allocation with OOM error.
-        RAY_LOG(ERROR) << "Out of disk space with fallocate error: "
-                       << std::strerror(errno);
-        *pointer = MFAIL;
-        return;
-      }
+  RAY_LOG(DEBUG) << "Preallocating fallback allocation using fallocate";
+  int ret = fallocate(*fd, /*mode*/ 0, /*offset*/ 0, size);
+  if (ret != 0) {
+    if (ret == EOPNOTSUPP || ret == ENOSYS) {
+      // in case that fallocate is not supported by current filesystem or kernel,
+      // we continue to mmap
+      RAY_LOG(DEBUG) << "fallocate is not supported: " << std::strerror(errno);
+    } else {
+      // otherwise we short circuit the allocation with OOM error.
+      RAY_LOG(ERROR) << "Out of disk space with fallocate error: "
+                      << std::strerror(errno);
+      *pointer = MFAIL;
+      return;
     }
   }
 #endif /* __linux__ */

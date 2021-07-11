@@ -216,6 +216,22 @@ def test_fallback_allocation_failure(shutdown_only):
     assert num_exceptions > 0
 
 
+@pytest.mark.skipif(
+    platform.system() != "Linux",
+    reason="Only Linux handles allocation disk full error.")
+def test_init_allocation_failure(shutdown_only):
+    object_store_full_error_thrown = False
+    try:
+        shm_size = shutil.disk_usage("/dev/shm").total
+        ray.init(
+            object_store_memory=shm_size * 2,
+            _temp_dir="/dev/shm",
+            _system_config={"plasma_unlimited": False})
+    except ray.exceptions.ObjectStoreFullError:
+        object_store_full_error_thrown = True
+    assert object_store_full_error_thrown
+
+
 # TODO(ekl) enable this test once we implement this behavior.
 # @pytest.mark.skipif(
 #    platform.system() == "Windows", reason="Need to fix up for Windows.")
