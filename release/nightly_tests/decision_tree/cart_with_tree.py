@@ -2,6 +2,7 @@
 import numpy as np
 import ray
 from sklearn import datasets, metrics
+from ray.cluster_utils import Cluster
 import time
 import tempfile
 import os
@@ -358,18 +359,30 @@ if __name__ == "__main__":
     parser.add_argument("--concurrency", type=int, default=1)
     args = parser.parse_args()
 
-    ray.init(address=os.environ["RAY_ADDRESS"])
+    cluster = Cluster(
+        initialize_head=True,
+        head_node_args={
+            "num_cpus": 4,
+            "object_store_memory": 10 * 1024 * 1024 * 1024
+        })
 
-    futures = []
-    for i in range(args.concurrency):
-        print(f"concurrent run: {i}")
-        futures.append(run_in_cluster.remote())
-        time.sleep(10)
+    for i in range(3):
+        cluster.add_node(
+            num_cpus=4,
+            object_store_memory=10 * 1024 * 1024 * 1024
+        )
 
-    for i, f in enumerate(futures):
-        treetime, accuracy = ray.get(f)
-        print(f"Tree {i} building took {treetime} seconds")
-        print(f"Test Accuracy: {accuracy}")
+    ray.init(address=cluster.address)
+  
+    for _ in range (2):
+      futures = []
+      for i in range(args.concurrency):
+          print(f"concurrent run: {i}")
+          futures.append(run_in_cluster.remote())
+          time.sleep(10)
 
-    with open(os.environ["TEST_OUTPUT_JSON"], "w") as f:
-        f.write(json.dumps({"build_time": treetime, "success": 1}))
+      for i, f in enumerate(futures):
+          treetime, accuracy = ray.get(f)
+          print(f"Tree {i} building took {treetime} seconds")
+          print(f"Test Accuracy: {accuracy}")
+      sleep(10)
