@@ -16,6 +16,7 @@
 
 #include <boost/asio.hpp>
 #include <limits>
+#include "absl/base/attributes.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "ray/common/ray_config.h"
@@ -82,7 +83,7 @@ struct StatsHandle {
 
   void ZeroAccumulatedQueuingDelay() { start_time = absl::GetCurrentTimeNanos(); }
 
-  ~StatsHandle() {
+  ABSL_ATTRIBUTE_NO_SANITIZE_THREAD ~StatsHandle() {
     if (!execution_recorded) {
       // If handler execution was never recorded, we need to clean up some queueing
       // stats in order to prevent those stats from leaking.
