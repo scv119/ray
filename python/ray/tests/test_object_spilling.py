@@ -395,7 +395,7 @@ async def test_spill_during_get(object_spilling_config, shutdown_only,
     object_spilling_config, _ = object_spilling_config
     address = ray.init(
         num_cpus=1,
-        object_store_memory=100 * 1024 * 1024,
+        object_store_memory=10 * 1024 * 1024,
         _system_config={
             "automatic_object_spilling_enabled": True,
             "object_store_full_delay_ms": 100,
@@ -411,12 +411,12 @@ async def test_spill_during_get(object_spilling_config, shutdown_only,
         @ray.remote(num_cpus=0)
         class Actor:
             async def f(self):
-                return np.zeros(10 * 1024 * 1024)
+                return np.zeros(1 * 1024 * 1024)
     else:
 
         @ray.remote(num_cpus=0)
         def f():
-            return np.zeros(10 * 1024 * 1024)
+            return np.zeros(1 * 1024 * 1024)
 
     if is_async:
         a = Actor.remote()
