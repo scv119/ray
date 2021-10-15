@@ -265,6 +265,13 @@ def test_parquet_write(ray_start_regular_shared, tmp_path):
     assert df.equals(dfds)
 
 
+def test_reexecute_after_count_or_sum(ray_start_regular_shared):
+    pipe = ray.data.range(3).repeat(3)
+    assert 9 == pipe.count()
+    assert 9 == pipe.sum()
+    assert 18 == pipe.map(lambda x: x + 1).sum()
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main(["-v", __file__]))

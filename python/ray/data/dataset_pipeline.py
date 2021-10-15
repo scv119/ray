@@ -55,7 +55,7 @@ class DatasetPipeline(Generic[T]):
                  stages: List[Callable[[Dataset[Any]], Dataset[Any]]] = None,
                  length: int = None,
                  progress_bars: bool = progress_bar._enabled,
-                 _executed: List[bool] = None):
+                 _executed: bool = False):
         """Construct a DatasetPipeline (internal API).
 
         The constructor is not part of the DatasetPipeline API. Use the
@@ -69,7 +69,7 @@ class DatasetPipeline(Generic[T]):
         self._uuid = None  # For testing only.
         # Whether the pipeline execution has started.
         # This variable is shared across all pipelines descending from this.
-        self._executed = _executed or [False]
+        self._executed = _executed
 
     def iter_batches(self,
                      *,
@@ -199,9 +199,9 @@ class DatasetPipeline(Generic[T]):
 
         coordinator = PipelineSplitExecutorCoordinator.remote(
             self, n, splitter)
-        if self._executed[0]:
+        if self._executed:
             raise RuntimeError("Pipeline cannot be read multiple times.")
-        self._executed[0] = True
+        self._executed = True
 
         class SplitIterator:
             def __init__(self, split_index, coordinator):
@@ -401,10 +401,14 @@ class DatasetPipeline(Generic[T]):
         Returns:
             The number of records in the dataset pipeline.
         """
+        executed_state = self._executed
+        self._executed = False
         pipe = self.map_batches(lambda batch: [len(batch)])
         total = 0
         for elem in pipe.iter_rows():
             total += elem
+        # allow pipeline to be executed again
+        self._executed = executed_state
         return total
 
     def sum(self) -> int:
@@ -417,11 +421,15 @@ class DatasetPipeline(Generic[T]):
         Returns:
             The sum of the records in the dataset pipeline.
         """
+        # allow pipeline to be executed again
+        executed_state = self._executed
+        self._executed = False
         pipe = self.map_batches(
             lambda batch: [batch.sum()[0]], batch_format="pandas")
         total = 0
         for elem in pipe.iter_rows():
             total += elem
+        self._executed = executed_state
         return total
 
     def show_windows(self, limit_per_dataset: int = 10) -> None:
@@ -527,9 +535,9 @@ class DatasetPipeline(Generic[T]):
         Returns:
             Iterator over the datasets outputted from this pipeline.
         """
-        if self._executed[0]:
+        if self._executed:
             raise RuntimeError("Pipeline cannot be read multiple times.")
-        self._executed[0] = True
+        self._executed = True
         return PipelineExecutor(self)
 
     @DeveloperAPI
@@ -543,7 +551,7 @@ class DatasetPipeline(Generic[T]):
         Returns:
             The transformed DatasetPipeline.
         """
-        if self._executed[0]:
+        if self._executed:
             raise RuntimeError("Pipeline cannot be read multiple times.")
         return DatasetPipeline(
             self._base_iterable,
