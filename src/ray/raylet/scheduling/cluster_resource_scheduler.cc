@@ -140,6 +140,7 @@ bool ClusterResourceScheduler::UpdateNode(const std::string &node_id_string,
   }
 
   AddOrUpdateNode(node_id, local_view);
+  RAY_LOG_EVERY_MS(DEBUG, 30000) << "Cluster resource updated: " << DebugString();
   return true;
 }
 

@@ -421,8 +421,9 @@ void GcsResourceManager::SendBatchedResourceUsage() {
   rpc::ResourceUsageBatchData batch;
   GetResourceUsageBatchForBroadcast_Locked(batch);
   if (batch.ByteSizeLong() > 0) {
-    RAY_CHECK_OK(gcs_pub_sub_->Publish(RESOURCES_BATCH_CHANNEL, "",
-                                       batch.SerializeAsString(), nullptr));
+    auto serialized = batch.SerializeAsString();
+    RAY_LOG_EVERY_MS(DEBUG, 30000) << "GCS broadcasting resource usage: " << serialized;
+    RAY_CHECK_OK(gcs_pub_sub_->Publish(RESOURCES_BATCH_CHANNEL, "", serialized, nullptr));
     stats::OutboundHeartbeatSizeKB.Record(batch.ByteSizeLong() / 1024.0);
   }
 }

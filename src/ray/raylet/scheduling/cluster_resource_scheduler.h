@@ -65,9 +65,9 @@ class ClusterResourceScheduler : public ClusterResourceSchedulerInterface {
       const absl::flat_hash_map<std::string, double> &resource_map_total,
       const absl::flat_hash_map<std::string, double> &resource_map_available);
 
-  /// Update node resources. This hanppens when a node resource usage udpated.
+  /// Update node resources. This hanppens when a node resource usage updated.
   ///
-  /// \param node_id_string ID of the node which resoruces need to be udpated.
+  /// \param node_id_string ID of the node which resources need to be updated.
   /// \param resource_data The node resource data.
   bool UpdateNode(const std::string &node_id_string,
                   const rpc::ResourcesData &resource_data) override;
