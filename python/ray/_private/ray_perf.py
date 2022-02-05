@@ -117,12 +117,6 @@ def main(results=None):
 
     arr = np.zeros(100 * 1024 * 1024, dtype=np.int64)
 
-    results += timeit("single client get calls (Plasma Store)", get_small)
-
-    results += timeit("single client put calls (Plasma Store)", put_small)
-
-    results += timeit("multi client put calls (Plasma Store)", put_multi_small, 1000)
-
     def put_large():
         ray.put(arr)
 

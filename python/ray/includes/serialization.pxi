@@ -2,6 +2,8 @@ from libc.string cimport memcpy
 from libc.stdint cimport uintptr_t, uint64_t, INT32_MAX
 import contextlib
 import cython
+import time
+import logging
 
 DEF MEMCOPY_THREADS = 6
 

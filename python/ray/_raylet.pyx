@@ -154,6 +154,9 @@ include "includes/metric.pxi"
 # whether C++ optimizations were enabled during compilation.
 OPTIMIZED = __OPTIMIZE__
 
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s.%(msecs)03d %(message)s',datefmt='%Y-%m-%d,%H:%M:%S')
+
 logger = logging.getLogger(__name__)
 
 cdef int check_status(const CRayStatus& status) nogil except -1:
@@ -1320,11 +1323,13 @@ cdef class CoreWorker:
             metadata, total_bytes, object_ref,
             contained_object_ids,
             &c_object_id, &data, True, owner_address, inline_small_object)
+        logger.info("object created")
 
         if not object_already_exists:
             if total_bytes > 0:
                 (<SerializedObject>serialized_object).write_to(
                     Buffer.make(data))
+                logger.info("object written")
             if self.is_local_mode:
                 contained_object_refs = (
                         CCoreWorkerProcess.GetCoreWorker().
@@ -1339,6 +1344,7 @@ cdef class CoreWorker:
             else:
                 c_owner_address = move(self._convert_python_address(
                     owner_address))
+                logger.info("object sealing")
                 with nogil:
                     if object_ref is None:
                         check_status(
@@ -1354,6 +1360,7 @@ cdef class CoreWorker:
                             CCoreWorkerProcess.GetCoreWorker().SealExisting(
                                         c_object_id, pin_object=False,
                                         owner_address=move(c_owner_address)))
+                logger.info("object sealed")
 
         return c_object_id.Binary()
 

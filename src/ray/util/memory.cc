@@ -15,8 +15,10 @@
 #include "ray/util/memory.h"
 
 #include <cstring>
+#include <iostream>
 #include <thread>
 #include <vector>
+#include <chrono>
 
 namespace ray {
 
@@ -27,6 +29,7 @@ uint8_t *pointer_logical_and(const uint8_t *address, uintptr_t bits) {
 
 void parallel_memcopy(uint8_t *dst, const uint8_t *src, int64_t nbytes,
                       uintptr_t block_size, int num_threads) {
+  auto start = std::chrono::steady_clock::now();
   std::vector<std::thread> threadpool(num_threads);
   uint8_t *left = pointer_logical_and(src + block_size - 1, ~(block_size - 1));
   uint8_t *right = pointer_logical_and(src + nbytes, ~(block_size - 1));
@@ -59,6 +62,10 @@ void parallel_memcopy(uint8_t *dst, const uint8_t *src, int64_t nbytes,
       t.join();
     }
   }
+
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> elapsed_seconds = end-start;
+  std::cout << "memcopy elapsed time: " << elapsed_seconds.count() << "s\n";
 }
 
 }  // namespace ray

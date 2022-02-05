@@ -305,7 +305,6 @@ class Worker:
             assert object_ref is None, (
                 "Local Mode does not support " "inserting with an ObjectRef"
             )
-
         serialized_value = self.get_serialization_context().serialize(value)
         # This *must* be the first place that we construct this python
         # ObjectRef because an entry with 0 local references is created when
@@ -313,10 +312,13 @@ class Worker:
         # reference will be created. If another reference is created and
         # removed before this one, it will corrupt the state in the
         # reference counter.
+        start = time.time()
+        obj = self.core_worker.put_serialized_object(
+            serialized_value, object_ref=object_ref, owner_address=owner_address
+        )
+        #print(f"put object: {time.time() - start}")
         return ray.ObjectRef(
-            self.core_worker.put_serialized_object(
-                serialized_value, object_ref=object_ref, owner_address=owner_address
-            ),
+            obj,
             # If the owner address is set, then the initial reference is
             # already acquired internally in CoreWorker::CreateOwned.
             # TODO(ekl) we should unify the code path more with the others
