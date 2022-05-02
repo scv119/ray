@@ -8,6 +8,7 @@ from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 
 GROUP_NAME = "experimental_nccl_group_name"
 
+
 # Represents a GPU object managed by Ray.
 class GpuObjectRef:
     def __init__(self, id, src_rank, shape, dtype):
@@ -118,17 +119,22 @@ if __name__ == "__main__":
     @ray.remote(num_gpus=1)
     class ReceiverActor(DeviceGpuObjectManagerBase):
         def receive_gpu_ref(self, tensor_ref: GpuObjectRef):
+            # TODO(scv119): we need to call
+            # transfer_gpu_object in a separate thread to avoid deadlock.
+            # get_or_create_host_gpu_object_manager()
+            #   .transfer_gpu_object(tensor_ref, tensor_ref.src_rank, self.rank)
             buffer = self.get_gpu_buffer(tensor_ref)
             print(buffer)
 
     sender_actor = SenderActor.remote()
     receiver_actor = ReceiverActor.remote()
 
+    # setup the actors.
     host_gpu_object_manager = get_or_create_host_gpu_object_manager()
     host_gpu_object_manager.register_gpu_actor(sender_actor)
     host_gpu_object_manager.register_gpu_actor(receiver_actor)
 
-    # setup collective group
+    # setup collective group.
     ray.get(host_gpu_object_manager.setup_collective_group.remote())
 
     # do the actuall function call.
