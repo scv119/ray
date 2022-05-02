@@ -37,18 +37,25 @@ class HostGpuObjectManager:
             "ranks": ranks,
             "backend": "nccl",
         }
-        collective.declare_collective_group(self.actors, **_options)
+        print("setup collective groups")
+        collective.create_collective_group(self.actors, **_options)
+        print("done")
+
+        print("setup remote info")
         ray.get(
             [
                 actor.setup.remote(len(self.actors), rank, self.group_name)
                 for rank, actor in enumerate(self.actors)
             ]
         )
+        print("done")
 
     def transfer_gpu_object(self, ref: GpuObjectRef, src: int, dst: int):
-        send = self.gpu_managers[src].send_buffer.remote(ref, dst)
-        receive = self.gpu_managers[dst].receive_buffer.remote(ref, src)
+        print("start transfer")
+        send = self.actors[src].send_buffer.remote(ref, dst)
+        receive = self.actors[dst].receive_buffer.remote(ref, src)
         ray.get([send, receive])
+        print("transfer succeeded")
 
 
 def get_or_create_host_gpu_object_manager() -> "ActorHandle":
@@ -66,6 +73,7 @@ def get_or_create_host_gpu_object_manager() -> "ActorHandle":
 class DeviceGpuObjectManagerBase:
     def __init__(self):
         self.buffers = {}
+        self.device_manager = None
 
     def setup(self, world_size: int, rank: int, group_name):
         self.world_size = world_size
@@ -110,11 +118,13 @@ class DeviceGpuObjectManagerBase:
 
     def send_buffer(self, ref: GpuObjectRef, dest_rank: int) -> None:
         assert self.contains(ref)
+        print("collective.send")
         collective.send(self.buffers[ref.id], dest_rank, self.group_name)
 
     def receive_buffer(self, ref: GpuObjectRef, src_rank: int):
         assert not self.contains(ref)
         self.buffers[ref.id] = cp.ndarray(shape=ref.shape, dtype=ref.dtype)
+        print("collective.receive")
         collective.recv(self.buffers[ref.id], src_rank, self.group_name)
 
     # TODO: support GC objects
@@ -128,7 +138,7 @@ if __name__ == "__main__":
         def create_and_send(self, receiver):
             object = cp.ones((4,), dtype=cp.float32)
             ref = self.put_cupy_array(object)
-            return receiver.receive_gpu_ref.remote(ref)
+            return ray.get(receiver.receive_gpu_ref.remote(ref))
 
     @ray.remote(num_gpus=1)
     class ReceiverActor(DeviceGpuObjectManagerBase):
@@ -136,16 +146,18 @@ if __name__ == "__main__":
             buffer = self.get_gpu_buffer(tensor_ref)
             print(buffer)
 
-    sender_actor = SenderActor.remote()
-    receiver_actor = ReceiverActor.remote()
+    sender_actor = SenderActor.options(max_concurrency=2, num_gpus=1).remote()
+    receiver_actor = ReceiverActor.options(max_concurrency=2, num_gpus=1).remote()
 
     # setup the actors.
     host_gpu_object_manager = get_or_create_host_gpu_object_manager()
-    host_gpu_object_manager.register_gpu_actor(sender_actor)
-    host_gpu_object_manager.register_gpu_actor(receiver_actor)
+    ray.get([
+        host_gpu_object_manager.register_gpu_actor.remote(sender_actor),
+        host_gpu_object_manager.register_gpu_actor.remote(receiver_actor)
+    ])
 
     # setup collective group.
     ray.get(host_gpu_object_manager.setup_collective_group.remote())
 
     # do the actuall function call.
-    ray.get(sender_actor.create_and_send(receiver_actor))
+    ray.get(sender_actor.create_and_send.remote(receiver_actor))
