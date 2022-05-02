@@ -1,12 +1,10 @@
 import uuid
+import cupy as cp
 import numpy as np
 import ray
 import ray.util.collective as collective
 from ray.actor import ActorHandle
 from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
-
-import cupy as cp
-
 
 GROUP_NAME = "experimental_nccl_group_name"
 
@@ -108,31 +106,30 @@ def get_or_create_host_gpu_object_manager() -> "ActorHandle":
 
 # examples on how to use it:
 
+if __name__ == "__main__":
 
-@ray.remote(num_gpus=1)
-class SenderActor(DeviceGpuObjectManagerBase):
-    def create_and_send(self, receiver):
-        object = cp.ones((4,), dtype=cp.float32)
-        ref = self.put_cupy_array(object)
-        return receiver.receive_gpu_ref.remote(ref)
+    @ray.remote(num_gpus=1)
+    class SenderActor(DeviceGpuObjectManagerBase):
+        def create_and_send(self, receiver):
+            object = cp.ones((4,), dtype=cp.float32)
+            ref = self.put_cupy_array(object)
+            return receiver.receive_gpu_ref.remote(ref)
 
+    @ray.remote(num_gpus=1)
+    class ReceiverActor(DeviceGpuObjectManagerBase):
+        def receive_gpu_ref(self, tensor_ref: GpuObjectRef):
+            buffer = self.get_gpu_buffer(tensor_ref)
+            print(buffer)
 
-@ray.remote(num_gpus=1)
-class ReceiverActor(DeviceGpuObjectManagerBase):
-    def receive_gpu_ref(self, tensor_ref: GpuObjectRef):
-        buffer = self.get_gpu_buffer(tensor_ref)
-        print(buffer)
+    sender_actor = SenderActor.remote()
+    receiver_actor = ReceiverActor.remote()
 
+    host_gpu_object_manager = get_or_create_host_gpu_object_manager()
+    host_gpu_object_manager.register_gpu_actor(sender_actor)
+    host_gpu_object_manager.register_gpu_actor(receiver_actor)
 
-sender_actor = SenderActor.remote()
-receiver_actor = ReceiverActor.remote()
+    # setup collective group
+    ray.get(host_gpu_object_manager.setup_collective_group.remote())
 
-host_gpu_object_manager = get_or_create_host_gpu_object_manager()
-host_gpu_object_manager.register_gpu_actor(sender_actor)
-host_gpu_object_manager.register_gpu_actor(receiver_actor)
-
-# setup collective group
-ray.get(host_gpu_object_manager.setup_collective_group.remote())
-
-# do the actuall function call.
-ray.get(sender_actor.create_and_send(receiver_actor))
+    # do the actuall function call.
+    ray.get(sender_actor.create_and_send(receiver_actor))
