@@ -19,49 +19,6 @@ class GpuObjectRef:
         # self.host_name = ...
 
 
-# Per device GPU object manager.
-class DeviceGpuObjectManagerBase:
-    def __init__(self):
-        self.buffers = {}
-
-    def setup(self, world_size: int, rank: int, group_name):
-        self.world_size = world_size
-        self.rank = rank
-        self.group_name = group_name
-
-    def put_numpy_array(self, buffer: np.ndarray) -> GpuObjectRef:
-        buffer_id = uuid.uuid4()
-        self.buffers[buffer_id] = cp.asarray(buffer)
-        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
-
-    def put_cupy_array(self, buffer: cp.ndarray) -> GpuObjectRef:
-        buffer_id = uuid.uuid4()
-        self.buffers[buffer_id] = buffer
-        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
-
-    # TODO: support torch tensor
-    # def put_torch_tensor()
-    #   ...
-
-    def get_gpu_buffer(self, ref: GpuObjectRef):
-        assert self.contains(ref)
-        return self.buffers[ref.id]
-
-    def contains(self, ref: GpuObjectRef) -> bool:
-        return ref.id in self.buffers
-
-    def send_buffer(self, ref: GpuObjectRef, dest_rank: int) -> None:
-        assert self.contains(ref)
-        collective.send(self.buffers[ref.id], dest_rank, self.group_name)
-
-    def receive_buffer(self, ref: GpuObjectRef, src_rank: int):
-        assert not self.contains(ref)
-        self.buffers[ref.id] = cp.ndarray(shape=ref.shape, dtype=ref.dtype)
-        collective.recv(self.buffers[ref.id], src_rank, self.group_name)
-
-    # TODO: support GC objects
-
-
 # Per Host Gpu object manager.
 @ray.remote(num_gpus=0, num_cpus=0)
 class HostGpuObjectManager:
@@ -105,8 +62,65 @@ def get_or_create_host_gpu_object_manager() -> "ActorHandle":
     ).remote()
 
 
-# examples on how to use it:
+# Per device GPU object manager.
+class DeviceGpuObjectManagerBase:
+    def __init__(self):
+        self.buffers = {}
 
+    def setup(self, world_size: int, rank: int, group_name):
+        self.world_size = world_size
+        self.rank = rank
+        self.group_name = group_name
+
+    def put_numpy_array(self, buffer: np.ndarray) -> GpuObjectRef:
+        buffer_id = uuid.uuid4()
+        self.buffers[buffer_id] = cp.asarray(buffer)
+        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
+
+    def put_cupy_array(self, buffer: cp.ndarray) -> GpuObjectRef:
+        buffer_id = uuid.uuid4()
+        self.buffers[buffer_id] = buffer
+        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
+
+    # TODO: support torch tensor
+    # def put_torch_tensor()
+    #   ...
+
+    def _get_gpu_buffer(self, ref: GpuObjectRef):
+        assert self.contains(ref)
+        return self.buffers[ref.id]
+
+    def _get_device_object_manager(self) -> "ActorHandle":
+        if not self.device_manager:
+            self.device_manager = get_or_create_host_gpu_object_manager()
+        return self.device_manager
+
+    def get_gpu_buffer(self, ref: GpuObjectRef):
+        if self.contains(ref):
+            return self._get_gpu_buffer(ref)
+        ray.get(
+            self._get_device_object_manager().transfer_gpu_object.remote(
+                ref, ref.src_rank, self.rank
+            )
+        )
+        return self._get_gpu_buffer(ref)
+
+    def contains(self, ref: GpuObjectRef) -> bool:
+        return ref.id in self.buffers
+
+    def send_buffer(self, ref: GpuObjectRef, dest_rank: int) -> None:
+        assert self.contains(ref)
+        collective.send(self.buffers[ref.id], dest_rank, self.group_name)
+
+    def receive_buffer(self, ref: GpuObjectRef, src_rank: int):
+        assert not self.contains(ref)
+        self.buffers[ref.id] = cp.ndarray(shape=ref.shape, dtype=ref.dtype)
+        collective.recv(self.buffers[ref.id], src_rank, self.group_name)
+
+    # TODO: support GC objects
+
+
+# examples on how to use it:
 if __name__ == "__main__":
 
     @ray.remote(num_gpus=1)
@@ -119,10 +133,6 @@ if __name__ == "__main__":
     @ray.remote(num_gpus=1)
     class ReceiverActor(DeviceGpuObjectManagerBase):
         def receive_gpu_ref(self, tensor_ref: GpuObjectRef):
-            # TODO(scv119): we need to call
-            # transfer_gpu_object in a separate thread to avoid deadlock.
-            # get_or_create_host_gpu_object_manager()
-            #   .transfer_gpu_object(tensor_ref, tensor_ref.src_rank, self.rank)
             buffer = self.get_gpu_buffer(tensor_ref)
             print(buffer)
 
