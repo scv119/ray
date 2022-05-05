@@ -16,7 +16,7 @@ from gpu_object_ref import GpuObjectRef
 GROUP_NAME = "experimental_nccl_group_name"
 
 # Represents a GPU object managed by Ray.
-#class GpuObjectRef:
+# class GpuObjectRef:
 #    def __init__(self, id, src_rank, shape, dtype):
 #        self.id = id
 #        self.src_rank = src_rank
@@ -24,9 +24,11 @@ GROUP_NAME = "experimental_nccl_group_name"
 #        self.dtype = dtype
 #        # self.host_name = ...
 
+
 @ray.remote(num_cpus=0)
 def send_request(url):
     requests.get(url)
+
 
 # Per Host Gpu object manager.
 @ray.remote(num_gpus=0, num_cpus=0)
@@ -63,13 +65,21 @@ class HostGpuObjectManager:
 
     def transfer_gpu_object(self, ref: GpuObjectRef, src: int, dst: int):
         print("start transfer")
-        serialized = urllib.parse.quote(base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe='')
-        send_url = f"http://127.0.0.1:{self.actor_ports[src]}/send?dst={dst}&ref={serialized}"
-        recv_url = f"http://127.0.0.1:{self.actor_ports[dst]}/recv?src={src}&ref={serialized}"
-        ray.get([
-            send_request.remote(send_url),
-            send_request.remote(recv_url),
-            ])
+        serialized = urllib.parse.quote(
+            base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe=""
+        )
+        send_url = (
+            f"http://127.0.0.1:{self.actor_ports[src]}/send?dst={dst}&ref={serialized}"
+        )
+        recv_url = (
+            f"http://127.0.0.1:{self.actor_ports[dst]}/recv?src={src}&ref={serialized}"
+        )
+        ray.get(
+            [
+                send_request.remote(send_url),
+                send_request.remote(recv_url),
+            ]
+        )
         print("transfer succeeded")
 
 
@@ -89,11 +99,12 @@ class HttpCoordinator:
         self.port = port
         self.app = Flask(__name__)
         self.send_fn = send_fn
-        self.recv_fn = recv_fn 
+        self.recv_fn = recv_fn
 
         @self.app.route("/send")
         def send():
-            from flask import request 
+            from flask import request
+
             dst = request.args.get("dst")
             ref = request.args.get("ref")
             self.send_fn(pickle.loads(base64.b64decode(ref)), int(dst))
@@ -101,7 +112,8 @@ class HttpCoordinator:
 
         @self.app.route("/recv")
         def recv():
-            from flask import request 
+            from flask import request
+
             src = request.args.get("src")
             ref = request.args.get("ref")
             self.recv_fn(pickle.loads(base64.b64decode(ref)), int(src))
@@ -197,16 +209,18 @@ if __name__ == "__main__":
 
     sender_actor = SenderActor.options(max_concurrency=2, num_gpus=1).remote(5000)
     receiver_actor = ReceiverActor.options(max_concurrency=2, num_gpus=1).remote(5001)
-    
+
     sender_actor.run_coordinator.remote()
     receiver_actor.run_coordinator.remote()
 
     # setup the actors.
     host_gpu_object_manager = get_or_create_host_gpu_object_manager()
-    ray.get([
-        host_gpu_object_manager.register_gpu_actor.remote(sender_actor, 5000),
-        host_gpu_object_manager.register_gpu_actor.remote(receiver_actor, 5001)
-    ])
+    ray.get(
+        [
+            host_gpu_object_manager.register_gpu_actor.remote(sender_actor, 5000),
+            host_gpu_object_manager.register_gpu_actor.remote(receiver_actor, 5001),
+        ]
+    )
 
     # setup collective group.
     ray.get(host_gpu_object_manager.setup_collective_group.remote())
