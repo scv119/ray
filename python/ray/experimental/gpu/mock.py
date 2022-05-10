@@ -33,4 +33,4 @@ class GpuActorBase:
 
 def setup_transfer_group(actors):
     group_uuid = uuid.uuid4()
-    ray.get([actor._setup(group_uuid).remote() for actor in actors])
+    ray.get([actor._setup.remote(group_uuid) for actor in actors])

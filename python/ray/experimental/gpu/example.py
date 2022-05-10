@@ -1,8 +1,9 @@
 import cupy as cp
 import ray
-from gpu_object_ref import GpuObjectRef
-from gpu_object_manager import GpuActorBase, setup_transfer_group
-
+#from gpu_object_ref import GpuObjectRef
+#from gpu_object_manager import GpuActorBase, setup_transfer_group
+from mock import GpuObjectRef
+from mock import GpuActorBase, setup_transfer_group
 
 @ray.remote(num_gpus=1)
 class GpuActor(GpuActorBase):
@@ -25,3 +26,4 @@ if __name__ == "__main__":
     for _ in range(10):
         ref = sender_actor.put_gpu_obj.remote()
         ray.get(receiver_actor.load_gpu_obj.remote(ref))
+
