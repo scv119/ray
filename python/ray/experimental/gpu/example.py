@@ -3,6 +3,7 @@ import ray
 from gpu_object_ref import GpuObjectRef
 from gpu_object_manager import GpuActorBase, setup_transfer_group
 
+
 @ray.remote(num_gpus=1)
 class GpuActor(GpuActorBase):
     """Example class for gpu transfer."""
@@ -24,4 +25,3 @@ if __name__ == "__main__":
     for _ in range(10):
         ref = sender_actor.put_gpu_obj.remote()
         ray.get(receiver_actor.load_gpu_obj.remote(ref))
-
