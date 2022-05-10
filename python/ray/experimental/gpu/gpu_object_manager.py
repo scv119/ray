@@ -9,7 +9,6 @@ import cupy as cp
 import ray
 import ray.util.collective as collective
 from ray.actor import ActorHandle
-from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 from flask import Flask
 import requests
 import pickle
@@ -62,7 +61,7 @@ class CollectiveCoordinator:
         from werkzeug import serving
 
         self.server = serving.make_server(
-            host="127.0.0.1", port=0, app=self.app, threaded=False
+            host=ray.util.get_node_ip_address(), port=0, app=self.app, threaded=False
         )
         self.port = self.server.socket.getsockname()[1]
         self.server.serve_forever()
@@ -84,7 +83,7 @@ class CollectiveCoordinator:
         serialized = urllib.parse.quote(
             base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe=""
         )
-        send_url = f"http://{address}/recv?dst={src_rank}&ref={serialized}"
+        send_url = f"http://{address}/recv?src={src_rank}&ref={serialized}"
         return _send_request.remote(send_url)
 
 
@@ -110,6 +109,7 @@ class GpuTransferManager:
 
     def setup_transfer_group(self, actors: List[ActorHandle]):
         group_name = self._get_new_group_name()
+        print(f"setup group {group_name} with actors {actors}")
         self.actor_groups[group_name] = ActorGroup(group_name, actors)
 
         ranks = list(range(len(actors)))
@@ -144,12 +144,10 @@ class GpuTransferManager:
 
 
 def get_transfer_manager() -> "ActorHandle":
-    node_id = ray.get_runtime_context().node_id
-    actor_name = f"host-gpu-object-manager-{node_id}"
     return GpuTransferManager.options(
-        scheduling_strategy=NodeAffinitySchedulingStrategy(node_id, soft=False),
-        name=actor_name,
-        namespace="GPU_TEST",
+        name="_ray_gpu_transfer_manager",
+        namespace="_RAY_GPU",
+        lifetime="detached",
         get_if_exists=True,
     ).remote()
 
@@ -175,7 +173,7 @@ class GpuActorBase:
     def get_coordinator_address(self) -> str:
         return f"{ray.util.get_node_ip_address()}:{self.coordinator.port}"
 
-    def put_gpu_buffer(self, buffer: cp.ndarray) -> GpuObjectRef:
+    def put_gpu_buffer(self, buffer) -> GpuObjectRef:
         buffer_id = uuid.uuid4()
         self.buffers[buffer_id] = buffer
         return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
@@ -228,7 +226,6 @@ class GpuActor(GpuActorBase):
 if __name__ == "__main__":
     sender_actor = GpuActor.options(num_gpus=1).remote()
     receiver_actor = GpuActor.options(num_gpus=1).remote()
-
     setup_transfer_group([sender_actor, receiver_actor])
 
     for _ in range(10):
