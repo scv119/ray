@@ -6,7 +6,6 @@ from typing import (
     List,
 )
 import cupy as cp
-import numpy as np
 import ray
 import ray.util.collective as collective
 from ray.actor import ActorHandle
@@ -166,20 +165,15 @@ class GpuActorBase:
         self.buffers = {}
         self.transfer_manager = None
         self.coordinator = CollectiveCoordinator(self.send_buffer, self.recv_buffer)
+        self.coordinator.run()
 
     def setup(self, world_size: int, rank: int, group_name: str):
         self.world_size = world_size
         self.rank = rank
         self.group_name = group_name
-        self.coordinator.run()
 
     def get_coordinator_address(self) -> str:
         return f"{ray.util.get_node_ip_address()}:{self.coordinator.port}"
-
-    def put_numpy_array(self, buffer: np.ndarray) -> GpuObjectRef:
-        buffer_id = uuid.uuid4()
-        self.buffers[buffer_id] = cp.asarray(buffer)
-        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
 
     def put_gpu_buffer(self, buffer: cp.ndarray) -> GpuObjectRef:
         buffer_id = uuid.uuid4()
