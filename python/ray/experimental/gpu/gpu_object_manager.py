@@ -1,5 +1,10 @@
 import base64
 import uuid
+import threading
+from typing import (
+    Callable,
+    List,
+)
 import cupy as cp
 import numpy as np
 import ray
@@ -13,88 +18,25 @@ import urllib.parse
 
 from gpu_object_ref import GpuObjectRef
 
-GROUP_NAME = "experimental_nccl_group_name"
-
-# Represents a GPU object managed by Ray.
-# class GpuObjectRef:
-#    def __init__(self, id, src_rank, shape, dtype):
-#        self.id = id
-#        self.src_rank = src_rank
-#        self.shape = shape
-#        self.dtype = dtype
-#        # self.host_name = ...
+GROUP_NAME_PREFIX = "__ray_gpu_store"
 
 
 @ray.remote(num_cpus=0)
-def send_request(url):
+def _send_request(url: str):
     requests.get(url)
 
 
-# Per Host Gpu object manager.
-@ray.remote(num_gpus=0, num_cpus=0)
-class GpuTransferManager:
-    def __init__(self, group_name=GROUP_NAME):
-        self.group_name = group_name
-        self.actors = []
-        self.actor_ports = []
-
-    def register_gpu_actor(self, actor: "ActorHandle", port):
-        self.actors.append(actor)
-        self.actor_ports.append(port)
-
-    def setup_collective_group(self):
-        ranks = list(range(len(self.actors)))
-        _options = {
-            "group_name": GROUP_NAME,
-            "world_size": len(self.actors),
-            "ranks": ranks,
-            "backend": "nccl",
-        }
-        collective.create_collective_group(self.actors, **_options)
-
-        ray.get(
-            [
-                actor.setup.remote(len(self.actors), rank, self.group_name)
-                for rank, actor in enumerate(self.actors)
-            ]
-        )
-
-    def transfer_gpu_object(self, ref: GpuObjectRef, src: int, dst: int):
-        #print("start transfer")
-        serialized = urllib.parse.quote(
-            base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe=""
-        )
-        send_url = (
-            f"http://127.0.0.1:{self.actor_ports[src]}/send?dst={dst}&ref={serialized}"
-        )
-        recv_url = (
-            f"http://127.0.0.1:{self.actor_ports[dst]}/recv?src={src}&ref={serialized}"
-        )
-        ray.get(
-            [
-                send_request.remote(send_url),
-                send_request.remote(recv_url),
-            ]
-        )
-
-
-def get_transfer_manager() -> "ActorHandle":
-    node_id = ray.get_runtime_context().node_id
-    actor_name = f"host-gpu-object-manager-{node_id}"
-    return GpuTransferManager.options(
-        scheduling_strategy=NodeAffinitySchedulingStrategy(node_id, soft=False),
-        name=actor_name,
-        namespace="GPU_TEST",
-        get_if_exists=True,
-    ).remote()
-
-
-class HttpCoordinator:
-    def __init__(self, port, send_fn, recv_fn):
+class CollectiveCoordinator:
+    def __init__(
+        self,
+        send_fn: Callable[[GpuObjectRef, int], None],
+        recv_fn: Callable[[GpuObjectRef, int], None],
+    ):
         import logging
-        log = logging.getLogger('werkzeug')
+
+        # disable flask info logs
+        log = logging.getLogger("werkzeug")
         log.setLevel(logging.ERROR)
-        self.port = port
         self.app = Flask(__name__)
         self.send_fn = send_fn
         self.recv_fn = recv_fn
@@ -117,44 +59,138 @@ class HttpCoordinator:
             self.recv_fn(pickle.loads(base64.b64decode(ref)), int(src))
             return "OK"
 
+    def _run(self):
+        from werkzeug import serving
+
+        self.server = serving.make_server(
+            host="127.0.0.1", port=0, app=self.app, threaded=False
+        )
+        self.port = self.server.socket.getsockname()[1]
+        self.server.serve_forever()
+
     def run(self):
-        self.app.run(port=self.port)
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    @staticmethod
+    def ray_call_send(address: str, dst_rank: int, ref: GpuObjectRef):
+        serialized = urllib.parse.quote(
+            base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe=""
+        )
+        send_url = f"http://{address}/send?dst={dst_rank}&ref={serialized}"
+        return _send_request.remote(send_url)
+
+    @staticmethod
+    def ray_call_recv(address: str, src_rank: int, ref: GpuObjectRef):
+        serialized = urllib.parse.quote(
+            base64.b64encode(pickle.dumps(ref)).decode("utf-8"), safe=""
+        )
+        send_url = f"http://{address}/recv?dst={src_rank}&ref={serialized}"
+        return _send_request.remote(send_url)
+
+
+class ActorGroup:
+    def __init__(self, group_name: str, actors: List[ActorHandle]):
+        self.group_name = group_name
+        self.actors = actors
+        self.actor_addresses = ray.get(
+            [actor.get_coordinator_address.remote() for actor in actors]
+        )
+
+
+# Per Host Gpu object manager.
+@ray.remote(num_gpus=0, num_cpus=0)
+class GpuTransferManager:
+    def __init__(self):
+        self.group_idx = 0
+        self.actor_groups = dict()
+
+    def _get_new_group_name(self):
+        self.group_idx += 1
+        return f"{GROUP_NAME_PREFIX}:{self.group_idx}"
+
+    def setup_transfer_group(self, actors: List[ActorHandle]):
+        group_name = self._get_new_group_name()
+        self.actor_groups[group_name] = ActorGroup(group_name, actors)
+
+        ranks = list(range(len(actors)))
+        _options = {
+            "group_name": group_name,
+            "world_size": len(actors),
+            "ranks": ranks,
+            "backend": "nccl",
+        }
+        collective.create_collective_group(actors, **_options)
+
+        ray.get(
+            [
+                actor.setup.remote(len(actors), rank, group_name)
+                for rank, actor in enumerate(actors)
+            ]
+        )
+
+    def collective_p2p_transfer(
+        self, group_name: str, ref: GpuObjectRef, src: int, dst: int
+    ):
+        ray.get(
+            [
+                CollectiveCoordinator.ray_call_send(
+                    self.actor_groups[group_name].actor_addresses[src], dst, ref
+                ),
+                CollectiveCoordinator.ray_call_recv(
+                    self.actor_groups[group_name].actor_addresses[dst], src, ref
+                ),
+            ]
+        )
+
+
+def get_transfer_manager() -> "ActorHandle":
+    node_id = ray.get_runtime_context().node_id
+    actor_name = f"host-gpu-object-manager-{node_id}"
+    return GpuTransferManager.options(
+        scheduling_strategy=NodeAffinitySchedulingStrategy(node_id, soft=False),
+        name=actor_name,
+        namespace="GPU_TEST",
+        get_if_exists=True,
+    ).remote()
+
+
+def setup_transfer_group(actors: List[ActorHandle]):
+    transfer_manager = get_transfer_manager()
+    ray.get(transfer_manager.setup_transfer_group.remote(actors))
 
 
 # Per device GPU object manager.
-class DeviceGpuObjectManagerBase:
-    def __init__(self, port):
+class GpuActorBase:
+    def __init__(self):
         self.buffers = {}
         self.transfer_manager = None
-        self.coordinator = HttpCoordinator(port, self.send_buffer, self.recv_buffer)
+        self.coordinator = CollectiveCoordinator(self.send_buffer, self.recv_buffer)
 
-    def setup(self, world_size: int, rank: int, group_name):
+    def setup(self, world_size: int, rank: int, group_name: str):
         self.world_size = world_size
         self.rank = rank
         self.group_name = group_name
-
-    def run_coordinator(self):
         self.coordinator.run()
+
+    def get_coordinator_address(self) -> str:
+        return f"{ray.util.get_node_ip_address()}:{self.coordinator.port}"
 
     def put_numpy_array(self, buffer: np.ndarray) -> GpuObjectRef:
         buffer_id = uuid.uuid4()
         self.buffers[buffer_id] = cp.asarray(buffer)
         return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
 
-    def put_cupy_array(self, buffer: cp.ndarray) -> GpuObjectRef:
+    def put_gpu_buffer(self, buffer: cp.ndarray) -> GpuObjectRef:
         buffer_id = uuid.uuid4()
         self.buffers[buffer_id] = buffer
         return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
-
-    # TODO: support torch tensor
-    # def put_torch_tensor()
-    #   ...
 
     def _get_gpu_buffer(self, ref: GpuObjectRef):
         assert self.contains(ref)
         return self.buffers[ref.id]
 
-    def _get_device_object_manager(self) -> "ActorHandle":
+    def _get_transfer_manager(self) -> "ActorHandle":
         if not self.transfer_manager:
             self.transfer_manager = get_transfer_manager()
         return self.transfer_manager
@@ -163,8 +199,8 @@ class DeviceGpuObjectManagerBase:
         if self.contains(ref):
             return self._get_gpu_buffer(ref)
         ray.get(
-            self._get_device_object_manager().transfer_gpu_object.remote(
-                ref, ref.src_rank, self.rank
+            self._get_transfer_manager().collective_p2p_transfer.remote(
+                self.group_name, ref, ref.src_rank, self.rank
             )
         )
         return self._get_gpu_buffer(ref)
@@ -185,10 +221,10 @@ class DeviceGpuObjectManagerBase:
 
 
 @ray.remote(num_gpus=1)
-class GpuActor(DeviceGpuObjectManagerBase):
+class GpuActor(GpuActorBase):
     def put_gpu_obj(self):
         object = cp.ones((1024 * 1024 * 100,), dtype=cp.float32)
-        return self.put_cupy_array(object)
+        return self.put_gpu_buffer(object)
 
     def load_gpu_obj(self, tensor_ref: GpuObjectRef):
         buffer = self.get_gpu_buffer(tensor_ref)
@@ -196,23 +232,10 @@ class GpuActor(DeviceGpuObjectManagerBase):
 
 
 if __name__ == "__main__":
-    sender_actor = GpuActor.options(max_concurrency=2, num_gpus=1).remote(5000)
-    receiver_actor = GpuActor.options(max_concurrency=2, num_gpus=1).remote(5001)
+    sender_actor = GpuActor.options(num_gpus=1).remote()
+    receiver_actor = GpuActor.options(num_gpus=1).remote()
 
-    sender_actor.run_coordinator.remote()
-    receiver_actor.run_coordinator.remote()
-
-    # setup the actors.
-    transfer_manager = get_transfer_manager()
-    ray.get(
-        [
-            transfer_manager.register_gpu_actor.remote(sender_actor, 5000),
-            transfer_manager.register_gpu_actor.remote(receiver_actor, 5001),
-        ]
-    )
-
-    # setup collective group.
-    ray.get(transfer_manager.setup_collective_group.remote())
+    setup_transfer_group([sender_actor, receiver_actor])
 
     for _ in range(10):
         ref = sender_actor.put_gpu_obj.remote()
