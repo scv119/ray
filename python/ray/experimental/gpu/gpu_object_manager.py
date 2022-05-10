@@ -25,6 +25,8 @@ def _send_request(url: str):
 
 
 class CollectiveCoordinator:
+    """Using HTTP Server to coordinate collective calls between participants."""
+
     def __init__(
         self,
         send_fn: Callable[[GpuObjectRef, int], None],
@@ -87,7 +89,9 @@ class CollectiveCoordinator:
         return _send_request.remote(send_url)
 
 
-class ActorGroup:
+class _ActorGroup:
+    """Represents an actor transfer group for GPU objects transfer"""
+
     def __init__(self, group_name: str, actors: List[ActorHandle]):
         self.group_name = group_name
         self.actors = actors
@@ -96,9 +100,10 @@ class ActorGroup:
         )
 
 
-# Per Host Gpu object manager.
 @ray.remote(num_gpus=0, num_cpus=0)
 class GpuTransferManager:
+    """Singleton transfer manager that manages all the actor transfer groups"""
+
     def __init__(self):
         self.group_idx = 0
         self.actor_groups = dict()
@@ -110,7 +115,7 @@ class GpuTransferManager:
     def setup_transfer_group(self, actors: List[ActorHandle]):
         group_name = self._get_new_group_name()
         print(f"setup group {group_name} with actors {actors}")
-        self.actor_groups[group_name] = ActorGroup(group_name, actors)
+        self.actor_groups[group_name] = _ActorGroup(group_name, actors)
 
         ranks = list(range(len(actors)))
         _options = {
@@ -157,8 +162,9 @@ def setup_transfer_group(actors: List[ActorHandle]):
     ray.get(transfer_manager.setup_transfer_group.remote(actors))
 
 
-# Per device GPU object manager.
 class GpuActorBase:
+    """Base actor class for GPU transfer."""
+
     def __init__(self):
         self.buffers = {}
         self.transfer_manager = None
@@ -221,6 +227,8 @@ class GpuActorBase:
 
 @ray.remote(num_gpus=1)
 class GpuActor(GpuActorBase):
+    """Example class for gpu transfer."""
+
     def put_gpu_obj(self):
         object = cp.ones((1024 * 1024 * 100,), dtype=cp.float32)
         return self.put_gpu_buffer(object)
