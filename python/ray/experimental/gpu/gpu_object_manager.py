@@ -123,7 +123,7 @@ class GpuTransferManager:
 
         ray.get(
             [
-                actor.setup.remote(len(actors), rank, group_name)
+                actor._setup_transfer_group.remote(len(actors), rank, group_name)
                 for rank, actor in enumerate(actors)
             ]
         )
@@ -164,8 +164,10 @@ class GpuActorBase:
         self.transfer_manager = None
         self.coordinator = CollectiveCoordinator(self.send_buffer, self.recv_buffer)
         self.coordinator.run()
+        self.group_name = None
 
-    def setup(self, world_size: int, rank: int, group_name: str):
+    def _setup_transfer_group(self, world_size: int, rank: int, group_name: str):
+        assert self.group_name is None, "Gpu actor could only belong to one group."
         self.world_size = world_size
         self.rank = rank
         self.group_name = group_name
@@ -176,7 +178,9 @@ class GpuActorBase:
     def put_gpu_buffer(self, buffer) -> GpuObjectRef:
         buffer_id = uuid.uuid4()
         self.buffers[buffer_id] = buffer
-        return GpuObjectRef(buffer_id, self.rank, buffer.shape, buffer.dtype)
+        return GpuObjectRef(
+            buffer_id, self.group_name, self.rank, buffer.shape, buffer.dtype
+        )
 
     def _get_gpu_buffer(self, ref: GpuObjectRef):
         assert self.contains(ref)
@@ -188,6 +192,9 @@ class GpuActorBase:
         return self.transfer_manager
 
     def get_gpu_buffer(self, ref: GpuObjectRef):
+        assert (
+            self.group_name == ref.group
+        ), f"{self.group_name} is different from {ref.group}"
         if self.contains(ref):
             return self._get_gpu_buffer(ref)
         ray.get(
