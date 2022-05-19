@@ -15,43 +15,41 @@ from ray.data.impl.delegating_block_builder import DelegatingBlockBuilder
 from ray.data.impl.block_list import BlockList
 from ray.data.impl.progress_bar import ProgressBar
 from ray.data.impl.remote_fn import cached_remote_fn
-
-import uuid
-import numpy as cp
-import ray
-import uuid
-from ray import ObjectRef
+from ray.data.impl.gpu_object_ref import GpuObjectRef
+from ray.data.impl.gpu_object_manager import GpuActorBase, setup_transfer_group
+import cupy as cp
 
 
-class GpuObjectRef:
-    """Presents a reference to GPU buffer."""
+#class GpuObjectRef:
+#    """Presents a reference to GPU buffer."""
+#
+#    def __init__(self, id: ObjectRef, group: uuid.UUID):
+#        self.id = id
+#        self.group = group
+#
+#
+#class GpuActorBase:
+#    def __init__(self):
+#        self.group = None
+#
+#    def _setup(self, group):
+#        assert self.group is None, "Gpu actor could only belong to one group."
+#        self.group = group
+#
+#    def put_gpu_buffer(self, object) -> GpuObjectRef:
+#        ref = GpuObjectRef(ray.put(object), self.group)
+#        return ref
+#
+#    def get_gpu_buffer(self, ref: GpuObjectRef):
+#        assert self.group == ref.group, f"{self.group} is different from {ref.group}"
+#        numpy_obj = ray.get(ref.id)
+#        return numpy_obj
 
-    def __init__(self, id: ObjectRef, group: uuid.UUID):
-        self.id = id
-        self.group = group
 
+#def setup_transfer_group(actors):
+#    group_uuid = uuid.uuid4()
+#    ray.get([actor._setup.remote(group_uuid) for actor in actors])
 
-class GpuActorBase:
-    def __init__(self):
-        self.group = None
-
-    def _setup(self, group):
-        assert self.group is None, "Gpu actor could only belong to one group."
-        self.group = group
-
-    def put_gpu_buffer(self, object) -> GpuObjectRef:
-        ref = GpuObjectRef(ray.put(object), self.group)
-        return ref
-
-    def get_gpu_buffer(self, ref: GpuObjectRef):
-        assert self.group == ref.group, f"{self.group} is different from {ref.group}"
-        numpy_obj = ray.get(ref.id)
-        return numpy_obj
-
-
-def setup_transfer_group(actors):
-    group_uuid = uuid.uuid4()
-    ray.get([actor._setup.remote(group_uuid) for actor in actors])
 T = TypeVar("T")
 U = TypeVar("U")
 
@@ -225,6 +223,7 @@ class ActorPoolStrategy(ComputeStrategy):
 
         if not remote_args:
             remote_args["num_cpus"] = 1
+        remote_args["num_gpus"] = 1
 
         BlockWorker = ray.remote(**remote_args)(BlockWorker)
 

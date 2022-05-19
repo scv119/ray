@@ -1,6 +1,6 @@
 import ray.data
 import time
-import numpy as np
+import cupy as np
 
 def produce_buffer(batch):
     time.sleep(1)
@@ -10,7 +10,7 @@ def consume_buffer(batch):
     time.sleep(1)
     return [sum(x) for x in batch]
 
-actor_pool_strategy = ray.data.ActorPoolStrategy(5, 5)
+actor_pool_strategy = ray.data.ActorPoolStrategy(4, 4)
 ds = (ray.data.range(10)
         .map_batches(produce_buffer, compute=actor_pool_strategy)
         .map_batches(consume_buffer, compute=actor_pool_strategy))
