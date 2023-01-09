@@ -124,7 +124,7 @@ def Deprecated(*args, **kwargs):
         return Deprecated()(args[0])
 
     doc_message = (
-        "\n    DEPRECATED: This API is deprecated and may be removed "
+        "**DEPRECATED:** This API is deprecated and may be removed "
         "in future Ray releases."
     )
     warning_message = (
@@ -133,10 +133,10 @@ def Deprecated(*args, **kwargs):
         'PYTHONWARNINGS="ignore::DeprecationWarning"'
     )
 
-    warning = kwargs.pop("warning", False)
+    warning = kwargs.get("warning", False)
 
     if "message" in kwargs:
-        doc_message = doc_message + "\n" + kwargs["message"]
+        doc_message = doc_message + " " + kwargs["message"]
         warning_message = warning_message + "\n" + kwargs["message"]
         del kwargs["message"]
 
