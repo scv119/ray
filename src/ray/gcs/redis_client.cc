@@ -28,6 +28,7 @@ namespace gcs {
 
 /// Run redis command using specified context and store the result in `reply`. Return true
 /// if the number of attemps didn't reach `redis_db_connect_retries`.
+/// Test
 static bool RunRedisCommandWithRetries(
     redisContext *context,
     const char *command,
