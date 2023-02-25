@@ -11,9 +11,11 @@ class GpuActor:
         pass
 
     def forward(self, input):
+        # TODO
         return
 
     def backward(self, grad, value):
+        # TODO
         pass
 
 
