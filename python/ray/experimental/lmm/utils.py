@@ -29,7 +29,7 @@ def _backward(input):
     return ray.get_actor(layer_id).backward(grad, value)
 
 
-class RayDataMode:
+class RayDataModel:
     def __init__(self, layers):
         for layer_id, layer in enumerate(layers):
             self.layer_actors = [
