@@ -1,14 +1,12 @@
-import time
-
 import ray
 
 
-@ray.remote(num_gpu=1)
+@ray.remote(num_gpus=1)
 class GpuActor:
-    def __init__(self, id, model):
+    def __init__(self, id, model, all_reduce_group = None):
         self.id = id
         self.model = model
-        pass
+        self.all_reduce_group = all_reduce_group
 
     def forward(self, input):
         # TODO
@@ -17,6 +15,10 @@ class GpuActor:
     def backward(self, grad, value):
         # TODO
         pass
+
+    def all_reduce(self):
+        pass
+
 
 
 def _forward(input):
