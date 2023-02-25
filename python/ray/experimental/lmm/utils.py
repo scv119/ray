@@ -19,12 +19,13 @@ class GpuActor:
         pass
 
 
-def _forward(layer_id, input):
-    return ray.get_actor(layer_id).forward(input)
+def _forward(input):
+    (layer_id, batch) = input
+    return ray.get_actor(layer_id).forward(batch)
 
 
-def _backward(layer_id, input):
-    (grad, value) = input
+def _backward(input):
+    (layer_id, grad, value) = input
     return ray.get_actor(layer_id).backward(grad, value)
 
 
