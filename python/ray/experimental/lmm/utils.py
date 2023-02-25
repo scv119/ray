@@ -20,7 +20,6 @@ class GpuActor:
         pass
 
 
-
 def _forward(input):
     (layer_id, batch) = input
     return ray.get_actor(layer_id).forward(batch)
@@ -31,7 +30,7 @@ def _backward(input):
     return ray.get_actor(layer_id).backward(grad, value)
 
 
-class RayDataModel:
+class PipelineParallelismModel:
     def __init__(self, layers):
         for layer_id, layer in enumerate(layers):
             self.layer_actors = [
