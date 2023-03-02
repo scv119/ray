@@ -11,6 +11,7 @@ import sys
 import torch.distributed
 from ray.util.collective.naive_collective_group import NaiveProcessGroup
 
+
 def create_ray_process_group(store, rank, size, timeout):
     return NaiveProcessGroup(
         store,
