@@ -107,7 +107,7 @@ class NaiveProcessGroup : public ProcessGroup {
   static void NaiveProcessGroupConstructor() __attribute__((constructor)) {
     py::object module = py::module::import("torch.distributed");
     py::object register_backend = module.attr("Backend").attr("register_backend");
-    register_backend("dummy", py::cpp_function(createNaiveProcessGroup));
+    register_backend("ray", py::cpp_function(createNaiveProcessGroup));
   }
 
  private:
