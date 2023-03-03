@@ -31,6 +31,8 @@ void CallRayFunction() {
     python_function();
     py::exec(
     "import ray; print(ray.is_initialized());");
+    py::exec(
+    "import ray; print(f'[extension] my task_id {ray.get_runtime_context().get_task_id()}')");
 
 }
 }  // namespace

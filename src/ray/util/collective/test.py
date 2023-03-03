@@ -20,6 +20,7 @@ class Actor:
         
     def run(self):
         import torch.distributed as dist
+        print(f"[worker] my task_id {ray.get_runtime_context().get_task_id()}")
         tensor = torch.ones(5).cuda()
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         print(tensor)
