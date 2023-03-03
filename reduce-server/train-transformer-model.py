@@ -6,6 +6,7 @@ subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.
 import os
 os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 print('import torch')
 import torch
@@ -18,7 +19,12 @@ print('init tokenizer')
 tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-560m")
 
 print('init model')
-model = BloomForCausalLM.from_pretrained("bigscience/bloom-560m")
+model = BloomForCausalLM.from_pretrained(
+    "bigscience/bloom-560m",
+    #torch_dtype=torch.float16, -> Attempting to unscale FP16 gradients.
+)
+
+#model = model.to(torch.float16) -> Attempting to unscale FP16 gradients.
 
 print('load dataset')
 from datasets import load_dataset
@@ -62,7 +68,7 @@ lm_datasets = tokenized_dataset.map(
 print('creating trainer')
 training_args = TrainingArguments(
     f"bloom560m-finetuned-pileoflaw_reddit",
-    per_device_train_batch_size=16,
+    per_device_train_batch_size=1,
     gradient_checkpointing=True,
     gradient_accumulation_steps=1,
     optim="adafactor",
@@ -72,8 +78,7 @@ training_args = TrainingArguments(
     learning_rate=5e-6,
     evaluation_strategy='steps',
     eval_steps=400,
-    tf32=True,
-    per_device_eval_batch_size=16,
+    per_device_eval_batch_size=1,
 )
 
 trainer = Trainer(
