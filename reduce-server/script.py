@@ -70,11 +70,10 @@ class ReducerClient:
 
         self.reducer = reducer
         self.name = name
-        self.counter = MonotonicCounter()
         self.rank = rank
 
     # make into async actor.
-    async def allreduce(self, gpu_buffer):
+    async def allreduce(self, gpu_buffer, global_order):
         # assign some global order id
         # copy to CPU
         # copy to reducer
@@ -84,7 +83,6 @@ class ReducerClient:
 
         cpu_tensor = gpu_buffer.to('cpu')
 
-        global_order = self.counter.get_and_increment()
         print(f'rank {self.rank} order {global_order} shape {cpu_tensor.size()}')
 
         reduced = await self.reducer.reduce.remote(
@@ -118,11 +116,12 @@ class Trainer:
             print('creating CUDA tensors')
 
         input_tensors = [torch.ones(i+1).cuda() for i in range(10)]
+        counter = MonotonicCounter()
+
         for epoch in range(10):
             futures = []
             for t in input_tensors:
-                # TODO I think this is not running the tasks in the order I expect.
-                futures.append(self.reducer_client.allreduce.remote(t))
+                futures.append(self.reducer_client.allreduce.remote(t, counter.get_and_increment()))
             ray.get(futures)
 
 
