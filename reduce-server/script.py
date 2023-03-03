@@ -31,7 +31,6 @@ class Reducer:
             for t in tensors[1:]:
                 sum_tensors = torch.add(sum_tensors, t)
 
-            #sum_tensors = f'sum for global order {global_order}'
             self.results[global_order] = sum_tensors
             self.consumed_count[global_order] += 1
             result = sum_tensors
@@ -81,21 +80,27 @@ class ReducerClient:
         # copy to reducer
         # get result from reducer
         # copy to GPU (gpu_buffer)
+        
 
         cpu_tensor = gpu_buffer.to('cpu')
+
+        global_order = self.counter.get_and_increment()
+        print(f'rank {self.rank} order {global_order} shape {cpu_tensor.size()}')
+
         reduced = await self.reducer.reduce.remote(
             cpu_tensor,
-            self.counter.get_and_increment(),
+            global_order,
             num_gpus,
             self.name,
             self.rank,
         )
+        
+        print('copy reduced to gpu_buffer', reduced.size(), gpu_buffer.size())
+        # TODO nonblocking? otherwise this consumes the event loop
+        gpu_buffer.copy_(reduced)
 
         print(f'reduced:"{reduced}"')
 
-    def callback(self, invocations):
-        print('callback', invocations)
-        pass
 
 @ray.remote(num_gpus=1)
 class Trainer:
@@ -105,11 +110,18 @@ class Trainer:
         self.rank = rank
 
     def do_training(self):
+        if self.rank == 0:
+            print('importing torch')
         import torch
-        input_tensors = [torch.ones(i+1).cuda() for i in range(2)]
+
+        if self.rank == 0:
+            print('creating CUDA tensors')
+
+        input_tensors = [torch.ones(i+1).cuda() for i in range(10)]
         for epoch in range(10):
             futures = []
             for t in input_tensors:
+                # TODO I think this is not running the tasks in the order I expect.
                 futures.append(self.reducer_client.allreduce.remote(t))
             ray.get(futures)
 
