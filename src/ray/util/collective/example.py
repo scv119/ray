@@ -1,6 +1,6 @@
 import os
 
-import dummy_collectives
+import ray_collectives
 import torch
 import torch.distributed as dist
 
@@ -9,7 +9,7 @@ os.environ["MASTER_PORT"] = "29500"
 
 dist.init_process_group("ray", rank=0, world_size=1)
 
-x = torch.ones(6)
+x = torch.ones(6).to("cuda")
 dist.all_reduce(x)
 y = x.cuda()
 dist.all_reduce(y)

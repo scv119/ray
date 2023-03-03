@@ -15,7 +15,7 @@ c10::intrusive_ptr<c10::ivalue::Future> NaiveProcessGroup::NaiveWork::getFuture(
 
 // If necessary, pass store/rank/size to the ctor and exchange connection
 // information here
-NaiveProcessGroup::NaiveProcessGroup(int rank, int size) : ProcessGroup(rank, size) {}
+NaiveProcessGroup::NaiveProcessGroup(const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size) : ProcessGroup(rank, size), store_(store) {}
 
 // This is a dummy allgather that sets all output tensors to zero
 // Modify the implementation to conduct real communication asynchronously
@@ -29,12 +29,12 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::allgather(
 }
 
 c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
-    std::vector<std::vector<at::Tensor>> &outputTensors,
-    std::vector<at::Tensor> &inputTensors,
-    const AllgatherOptions &ops) {
+    at::Tensor &outputBuffer,
+    at::Tensor &inputBuffer,
+    const AllgatherOptions &opts) {
   return c10::make_intrusive<NaiveWork>(
-      c10d::OpType::ALLGATHER_BASE,
-      getNcclPG().allgather(outputTensors, inputTensors, opts)->getFuture());
+      c10d::OpType::_ALLGATHER_BASE,
+      getNcclPG()._allgather_base(outputBuffer, inputBuffer, opts)->getFuture());
 }
 
 // This is a dummy allreduce that sets all output tensors to zero
@@ -139,11 +139,11 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::recvAnysource(
 }
 
 c10::intrusive_ptr<ProcessGroup> NaiveProcessGroup::createNaiveProcessGroup(
-    const c10::intrusive_ptr<::c10d::Store> & /* unused */,
+    const c10::intrusive_ptr<::c10d::Store> & store,
     int rank,
     int size,
     const std::chrono::duration<float> & /* unused */) {
-  return c10::make_intrusive<NaiveProcessGroup>(rank, size);
+  return c10::make_intrusive<NaiveProcessGroup>(store, rank, size);
 }
 
 c10d::ProcessGroup &NaiveProcessGroup::getNcclPG() {

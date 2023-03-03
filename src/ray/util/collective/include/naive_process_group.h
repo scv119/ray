@@ -31,7 +31,8 @@ class NaiveProcessGroup : public ProcessGroup {
     c10::intrusive_ptr<c10::ivalue::Future> future_;
   };
 
-  NaiveProcessGroup(int rank, int size);
+  NaiveProcessGroup(
+    const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size);
 
   c10::intrusive_ptr<Work> broadcast(
       std::vector<at::Tensor> &data,
