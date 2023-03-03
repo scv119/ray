@@ -1,12 +1,11 @@
 import os
 
-import torch
 import dummy_collectives
-
+import torch
 import torch.distributed as dist
 
-os.environ['MASTER_ADDR'] = 'localhost'
-os.environ['MASTER_PORT'] = '29500'
+os.environ["MASTER_ADDR"] = "localhost"
+os.environ["MASTER_PORT"] = "29500"
 
 dist.init_process_group("ray", rank=0, world_size=1)
 
