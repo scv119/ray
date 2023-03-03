@@ -93,11 +93,8 @@ class ReducerClient:
             self.rank,
         )
         
-        print('copy reduced to gpu_buffer', reduced.size(), gpu_buffer.size())
         # TODO nonblocking? otherwise this consumes the event loop
         gpu_buffer.copy_(reduced)
-
-        print(f'reduced:"{reduced}"')
 
 
 @ray.remote(num_gpus=1)
