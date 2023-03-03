@@ -1,7 +1,11 @@
 #include "naive_process_group.h"
 
+#include <pybind11/functional.h>
+#include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <torch/csrc/autograd/python_variable.h>
+
+namespace py = pybind11;
 
 namespace c10d {
 
@@ -9,8 +13,8 @@ namespace {
 PyObject *ConvertToPythonTensor(at::Tensor &tensor) { return THPVariable_Wrap(tensor); }
 
 void CallRayReduceAverage(std::vector<at::Tensor> &tensors) {
-    python::object module = python::import("tensor_test_file");
-    python::object python_function = module.attr("reduce_average");
+    auto module = py::module_::import("tensor_test_file");
+    auto python_function = module.attr("reduce_average");
     std::vector<PyObject *> tensor_vectors;
     for (auto& t: tensors) {
       tensor_vectors.push_back(ConvertToPythonTensor(t));
