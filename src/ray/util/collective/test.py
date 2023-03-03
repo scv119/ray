@@ -20,7 +20,7 @@ class Actor:
         
     def run(self):
         import torch.distributed as dist
-        tensor = torch.ones(1).cuda()
+        tensor = torch.ones(5).cuda()
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         print(tensor)
 
