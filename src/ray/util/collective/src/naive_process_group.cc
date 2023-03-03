@@ -15,11 +15,11 @@ PyObject *ConvertToPythonTensor(at::Tensor &tensor) { return THPVariable_Wrap(te
 
 void CallRayReduceAverage(std::vector<at::Tensor> &tensors) {
     py::gil_scoped_acquire acq{};
-    auto module = py::module_::import("tensor_test_file");
-    auto python_function = module.attr("reduce_average");
-    std::vector<PyObject *> tensor_vectors;
+    auto module = py::module_::import("ray.util.debug");
+    auto python_function = module.attr("debug_torch_tensors");
+    std::vector<py::object> tensor_vectors;
     for (auto& t: tensors) {
-      tensor_vectors.push_back(ConvertToPythonTensor(t));
+      tensor_vectors.push_back(py::reinterpret_borrow<py::object>(ConvertToPythonTensor(t)));
     }
     python_function(py::cast(tensor_vectors));
 }
@@ -79,6 +79,7 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
   CallRayFunction();
+  CallRayReduceAverage(tensors);
 //  if (opts.reduceOp != ReduceOp::AVG) {
     return c10::make_intrusive<NaiveWork>(
         c10d::OpType::ALLREDUCE, getNcclPG().allreduce(tensors, opts)->getFuture());
