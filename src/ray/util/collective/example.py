@@ -1,7 +1,7 @@
 import os
 
-import ray_collectives
 import torch
+import ray_collectives
 import torch.distributed as dist
 
 os.environ["MASTER_ADDR"] = "localhost"
