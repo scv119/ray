@@ -2,6 +2,7 @@
 
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/eval.h>
 #include <pybind11/stl.h>
 #include <torch/csrc/autograd/python_variable.h>
 
@@ -13,6 +14,7 @@ namespace {
 PyObject *ConvertToPythonTensor(at::Tensor &tensor) { return THPVariable_Wrap(tensor); }
 
 void CallRayReduceAverage(std::vector<at::Tensor> &tensors) {
+    py::gil_scoped_acquire acq{};
     auto module = py::module_::import("tensor_test_file");
     auto python_function = module.attr("reduce_average");
     std::vector<PyObject *> tensor_vectors;
@@ -20,6 +22,16 @@ void CallRayReduceAverage(std::vector<at::Tensor> &tensors) {
       tensor_vectors.push_back(ConvertToPythonTensor(t));
     }
     python_function(py::cast(tensor_vectors));
+}
+
+void CallRayFunction() {
+    py::gil_scoped_acquire acq{};
+    auto module = py::module_::import("ray");
+    auto python_function = module.attr("is_initialized");
+    python_function();
+    py::exec(
+    "import ray; print(ray.is_initialized());");
+
 }
 }  // namespace
 
@@ -64,17 +76,18 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 // Modify the implementation to conduct real communication asynchronously
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
-  if (opts.reduceOp == ReduceOp::AVG) {
+  CallRayFunction();
+//  if (opts.reduceOp != ReduceOp::AVG) {
     return c10::make_intrusive<NaiveWork>(
         c10d::OpType::ALLREDUCE, getNcclPG().allreduce(tensors, opts)->getFuture());
-  }
+//  }
 
-  CallRayReduceAverage(tensors);
-
-  auto future = c10::make_intrusive<c10::ivalue::Future>(
-    c10::ListType::create(c10::TensorType::get()));
-  future->markCompleted(c10::IValue(tensors));
-  return c10::make_intrusive<NaiveWork>(OpType::ALLGATHER, std::move(future));
+//  CallRayReduceAverage(tensors);
+//
+//  auto future = c10::make_intrusive<c10::ivalue::Future>(
+//    c10::ListType::create(c10::TensorType::get()));
+//  future->markCompleted(c10::IValue(tensors));
+//  return c10::make_intrusive<NaiveWork>(OpType::ALLGATHER, std::move(future));
 }
 
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce_coalesced(
