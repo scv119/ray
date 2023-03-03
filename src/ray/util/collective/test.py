@@ -2,10 +2,16 @@ import os
 
 import ray
 import torch
+import ray_reducer
 
 os.environ["MASTER_ADDR"] = "localhost"
 os.environ["MASTER_PORT"] = "29500"
 n, m = 128, 4
+
+
+def all_reduce_tensors(tensors):
+  print(tensors)
+
 
 @ray.remote(num_gpus=1)
 class Actor:
@@ -26,6 +32,7 @@ class Actor:
         print(tensor)
 
 ray.init(address="local")
+ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])
 
-actors = [Actor.remote(rank=i, size=2) for i in range(2)]
+actors = [Actor.remote(rank=i, size=4) for i in range(4)]
 ray.get([actor.run.remote() for actor in actors])
