@@ -1,6 +1,24 @@
 #include "naive_process_group.h"
 
+#include <pybind11/stl.h>
+#include <torch/csrc/autograd/python_variable.h>
+
 namespace c10d {
+
+namespace {
+PyObject *ConvertToPythonTensor(at::Tensor &tensor) { return THPVariable_Wrap(tensor); }
+
+void CallRayReduceAverage(std::vector<at::Tensor> &tensors) {
+    python::object module = python::import("tensor_test_file");
+    python::object python_function = module.attr("reduce_average");
+    std::vector<PyObject *> tensor_vectors;
+    for (auto& t: tensors) {
+      tensor_vectors.push_back(ConvertToPythonTensor(t));
+    }
+    python_function(py::cast(tensor_vectors));
+}
+}  // namespace
+
 bool NaiveProcessGroup::NaiveWork::isCompleted() { return true; }
 
 bool NaiveProcessGroup::NaiveWork::isSuccess() const { return true; }
@@ -15,7 +33,10 @@ c10::intrusive_ptr<c10::ivalue::Future> NaiveProcessGroup::NaiveWork::getFuture(
 
 // If necessary, pass store/rank/size to the ctor and exchange connection
 // information here
-NaiveProcessGroup::NaiveProcessGroup(const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size) : ProcessGroup(rank, size), store_(store) {}
+NaiveProcessGroup::NaiveProcessGroup(const c10::intrusive_ptr<::c10d::Store> &store,
+                                     int rank,
+                                     int size)
+    : ProcessGroup(rank, size), store_(store) {}
 
 // This is a dummy allgather that sets all output tensors to zero
 // Modify the implementation to conduct real communication asynchronously
@@ -29,9 +50,7 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::allgather(
 }
 
 c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
-    at::Tensor &outputBuffer,
-    at::Tensor &inputBuffer,
-    const AllgatherOptions &opts) {
+    at::Tensor &outputBuffer, at::Tensor &inputBuffer, const AllgatherOptions &opts) {
   return c10::make_intrusive<NaiveWork>(
       c10d::OpType::_ALLGATHER_BASE,
       getNcclPG()._allgather_base(outputBuffer, inputBuffer, opts)->getFuture());
@@ -39,10 +58,19 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 
 // This is a dummy allreduce that sets all output tensors to zero
 // Modify the implementation to conduct real communication asynchronously
-c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(
-    std::vector<at::Tensor> &tensors, const AllreduceOptions &opts) {
-  return c10::make_intrusive<NaiveWork>(
-      c10d::OpType::ALLREDUCE, getNcclPG().allreduce(tensors, opts)->getFuture());
+c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
+                                                      const AllreduceOptions &opts) {
+  if (opts.reduceOp == ReduceOp::AVG) {
+    return c10::make_intrusive<NaiveWork>(
+        c10d::OpType::ALLREDUCE, getNcclPG().allreduce(tensors, opts)->getFuture());
+  }
+
+  CallRayReduceAverage(tensors);
+
+  auto future = c10::make_intrusive<c10::ivalue::Future>(
+    c10::ListType::create(c10::TensorType::get()));
+  future->markCompleted(c10::IValue(tensors));
+  return c10::make_intrusive<NaiveWork>(OpType::ALLGATHER, std::move(future));
 }
 
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce_coalesced(
@@ -75,14 +103,13 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::alltoall_base(
           ->getFuture());
 }
 
-c10::intrusive_ptr<Work> NaiveProcessGroup::barrier(
-    const BarrierOptions &opts) {
+c10::intrusive_ptr<Work> NaiveProcessGroup::barrier(const BarrierOptions &opts) {
   return c10::make_intrusive<NaiveWork>(c10d::OpType::BARRIER,
                                         getNcclPG().barrier(opts)->getFuture());
 }
 
-c10::intrusive_ptr<Work> NaiveProcessGroup::broadcast(
-    std::vector<at::Tensor> &tensors, const BroadcastOptions &opts) {
+c10::intrusive_ptr<Work> NaiveProcessGroup::broadcast(std::vector<at::Tensor> &tensors,
+                                                      const BroadcastOptions &opts) {
   return c10::make_intrusive<NaiveWork>(
       c10d::OpType::BROADCAST, getNcclPG().broadcast(tensors, opts)->getFuture());
 }
@@ -96,8 +123,8 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::gather(
       getNcclPG().gather(outputTensors, inputTensors, opts)->getFuture());
 }
 
-c10::intrusive_ptr<Work> NaiveProcessGroup::reduce(
-    std::vector<at::Tensor> &tensors, const ReduceOptions &opts) {
+c10::intrusive_ptr<Work> NaiveProcessGroup::reduce(std::vector<at::Tensor> &tensors,
+                                                   const ReduceOptions &opts) {
   return c10::make_intrusive<NaiveWork>(c10d::OpType::REDUCE,
                                         getNcclPG().reduce(tensors, opts)->getFuture());
 }
@@ -120,14 +147,16 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::scatter(
       getNcclPG().scatter(outputTensors, inputTensors, opts)->getFuture());
 }
 
-c10::intrusive_ptr<Work> NaiveProcessGroup::send(
-    std::vector<at::Tensor> &tensors, int dstRank, int tag) {
+c10::intrusive_ptr<Work> NaiveProcessGroup::send(std::vector<at::Tensor> &tensors,
+                                                 int dstRank,
+                                                 int tag) {
   return c10::make_intrusive<NaiveWork>(
       c10d::OpType::SEND, getNcclPG().send(tensors, dstRank, tag)->getFuture());
 }
 
-c10::intrusive_ptr<Work> NaiveProcessGroup::recv(
-    std::vector<at::Tensor> &tensors, int srcRank, int tag) {
+c10::intrusive_ptr<Work> NaiveProcessGroup::recv(std::vector<at::Tensor> &tensors,
+                                                 int srcRank,
+                                                 int tag) {
   return c10::make_intrusive<NaiveWork>(
       c10d::OpType::RECV, getNcclPG().recv(tensors, srcRank, tag)->getFuture());
 }
@@ -139,7 +168,7 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::recvAnysource(
 }
 
 c10::intrusive_ptr<ProcessGroup> NaiveProcessGroup::createNaiveProcessGroup(
-    const c10::intrusive_ptr<::c10d::Store> & store,
+    const c10::intrusive_ptr<::c10d::Store> &store,
     int rank,
     int size,
     const std::chrono::duration<float> & /* unused */) {

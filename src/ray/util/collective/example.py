@@ -4,6 +4,8 @@ import torch
 import ray_collectives
 import torch.distributed as dist
 
+import ray_collectives
+
 os.environ["MASTER_ADDR"] = "localhost"
 os.environ["MASTER_PORT"] = "29500"
 

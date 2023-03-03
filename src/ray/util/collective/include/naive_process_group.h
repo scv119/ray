@@ -3,9 +3,9 @@
 #include <pybind11/chrono.h>
 #include <torch/python.h>
 
+#include <torch/csrc/distributed/c10d/PrefixStore.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
-#include <torch/csrc/distributed/c10d/PrefixStore.hpp>
 #include <torch/csrc/distributed/c10d/Store.hpp>
 #include <torch/csrc/distributed/c10d/Types.hpp>
 #include <torch/csrc/distributed/c10d/Utils.hpp>
@@ -18,9 +18,8 @@ class NaiveProcessGroup : public ProcessGroup {
    public:
     NaiveWork(OpType opType,
               c10::intrusive_ptr<c10::ivalue::Future> future)  // future of the output
-        : Work(
-              -1,  // rank, only used by recvAnySource, irrelevant in this demo
-              opType),
+        : Work(-1,  // rank, only used by recvAnySource, irrelevant in this demo
+               opType),
           future_(std::move(future)) {}
     bool isCompleted() override;
     bool isSuccess() const override;
@@ -31,8 +30,7 @@ class NaiveProcessGroup : public ProcessGroup {
     c10::intrusive_ptr<c10::ivalue::Future> future_;
   };
 
-  NaiveProcessGroup(
-    const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size);
+  NaiveProcessGroup(const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size);
 
   c10::intrusive_ptr<Work> broadcast(
       std::vector<at::Tensor> &data,
@@ -46,9 +44,8 @@ class NaiveProcessGroup : public ProcessGroup {
       std::vector<at::Tensor> &tensors,
       const AllreduceCoalescedOptions &opts = AllreduceCoalescedOptions()) override;
 
-  c10::intrusive_ptr<Work> reduce(
-      std::vector<at::Tensor> &tensors,
-      const ReduceOptions &opts = ReduceOptions()) override;
+  c10::intrusive_ptr<Work> reduce(std::vector<at::Tensor> &tensors,
+                                  const ReduceOptions &opts = ReduceOptions()) override;
 
   c10::intrusive_ptr<Work> allgather(
       std::vector<std::vector<at::Tensor>> &outputTensors,
@@ -63,10 +60,9 @@ class NaiveProcessGroup : public ProcessGroup {
   c10::intrusive_ptr<Work> barrier(
       const BarrierOptions &opts = BarrierOptions()) override;
 
-  c10::intrusive_ptr<Work> gather(
-      std::vector<std::vector<at::Tensor>> &outputTensors,
-      std::vector<at::Tensor> &inputTensors,
-      const GatherOptions &opts = GatherOptions()) override;
+  c10::intrusive_ptr<Work> gather(std::vector<std::vector<at::Tensor>> &outputTensors,
+                                  std::vector<at::Tensor> &inputTensors,
+                                  const GatherOptions &opts = GatherOptions()) override;
 
   c10::intrusive_ptr<Work> scatter(
       std::vector<at::Tensor> &outputTensors,
@@ -91,15 +87,15 @@ class NaiveProcessGroup : public ProcessGroup {
       const AllToAllOptions &opts = AllToAllOptions()) override;
 
   c10::intrusive_ptr<Work> send(std::vector<at::Tensor> &tensors,
-                                              int dstRank,
-                                              int tag) override;
+                                int dstRank,
+                                int tag) override;
 
   c10::intrusive_ptr<Work> recv(std::vector<at::Tensor> &tensors,
-                                              int srcRank,
-                                              int tag) override;
+                                int srcRank,
+                                int tag) override;
 
   c10::intrusive_ptr<Work> recvAnysource(std::vector<at::Tensor> &tensors,
-                                                       int tag) override;
+                                         int tag) override;
 
   static c10::intrusive_ptr<ProcessGroup> createNaiveProcessGroup(
       const c10::intrusive_ptr<::c10d::Store> &store,
