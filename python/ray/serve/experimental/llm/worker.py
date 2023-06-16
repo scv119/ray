@@ -49,7 +49,8 @@ class InferenceWorker:
         try:
             # stats = batch_state.stats()
             generations, batch_state = self._model.generate_token(batch_state)
-        except torch.cuda.OutOfMemoryError as e: 
+        except Exception as e:
+            print(f"error happened: {e}")
             #  Error happens when populate the new batch, we have to restart
             self._batch_state_cache.clear()
             return None, None
