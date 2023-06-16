@@ -239,25 +239,26 @@ class CausalLMBatch(Batch):
             + new_padding_right_offset,
         ]
 
-        # Ensure that past_key_values tensors can be updated in-place
-        if type(self.past_key_values[0]) == tuple:
-            self.past_key_values = [list(layer) for layer in self.past_key_values]
+        if self.past_key_values:
+            # Ensure that past_key_values tensors can be updated in-place
+            if type(self.past_key_values[0]) == tuple:
+                self.past_key_values = [list(layer) for layer in self.past_key_values]
 
-        # Update tensors in-place to allow incremental garbage collection
-        past_kv_length = max_input_length - 1
-        for layer in self.past_key_values:
-            past_keys, past_values = layer
-            if len(past_keys.shape) == 3:
-                # Force past to be of dim [self_size, num_heads, ...] for easy indexing
-                past_keys = past_keys.view(len(self), -1, *past_keys.shape[-2:])
-                past_values = past_values.view(len(self), -1, *past_values.shape[-2:])
-            if self.keys_head_dim_last:
-                layer[0] = past_keys[keep_indices, :, -past_kv_length:, :]
-            else:
-                layer[0] = past_keys[keep_indices, :, :, -past_kv_length:]
-            del past_keys
-            layer[1] = past_values[keep_indices, :, -past_kv_length:, :]
-            del past_values
+            # Update tensors in-place to allow incremental garbage collection
+            past_kv_length = max_input_length - 1
+            for layer in self.past_key_values:
+                past_keys, past_values = layer
+                if len(past_keys.shape) == 3:
+                    # Force past to be of dim [self_size, num_heads, ...] for easy indexing
+                    past_keys = past_keys.view(len(self), -1, *past_keys.shape[-2:])
+                    past_values = past_values.view(len(self), -1, *past_values.shape[-2:])
+                if self.keys_head_dim_last:
+                    layer[0] = past_keys[keep_indices, :, -past_kv_length:, :]
+                else:
+                    layer[0] = past_keys[keep_indices, :, :, -past_kv_length:]
+                del past_keys
+                layer[1] = past_values[keep_indices, :, -past_kv_length:, :]
+                del past_values
 
         max_tokens = len(request_ids) * max_input_length + total_remaining_decode_tokens
 
@@ -675,7 +676,7 @@ class CausalLM(Model):
                     next_token_logprob,
                     next_token_text,
                     next_token_id_squeezed.item() in self.all_special_ids,
-                    stopped,
+                    stop,
                     generated_text,
                 )
 
