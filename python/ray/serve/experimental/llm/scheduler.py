@@ -139,6 +139,7 @@ class InferenceScheduler:
     def process_request(
         self, input_text: str, params: SamplingParams, max_length: int = 1024, event=None
     ) -> FakeTokenStream:
+        params.max_new_tokens = max(1, params.max_new_tokens)
         request = GenerationRequest(
             id=get_request_id(),
             input_text=input_text,
