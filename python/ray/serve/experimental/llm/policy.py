@@ -41,14 +41,13 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         if len(self.oomed_requests) == 0:
             self.oom_penalty = 1
     
-    def _calculate_budget(self, requests, request):
-        max_input_length = request.input_length()
+    def _calculate_budget(self, max_input_length, requests, request):
+        max_input_length = max(max_input_length, request.input_length())
         gen_length = request.gen_length()
         for r in requests:
-            max_input_length = max(max_input_length, r.input_length)
-            gen_length += r.gen_length
-
-        
+            max_input_length = max(max_input_length, r.input_length())
+            gen_length += r.gen_length()
+        return gen_length + max_input_length * (len(requests) + 1)
 
 
     def select_new_requests(
@@ -64,14 +63,17 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         if min_num_requests and len(queue) < min_num_requests:
             return []
 
+        max_input_length = 0
+        for r in in_process_requests:
+            max_input_length = max(max_input_length, r.input_length())
+
         results = []
         while not queue.empty():
             request = queue.peek()
-            if request.total_tokens() >= token_budget:
+            if self._calculate_budget(max_input_length, results, request) >= token_budget:
                 break
             results.append(request)
             queue.pop()
-            token_budget -= request.total_tokens()
 
         if min_num_requests and len(results) < min_num_requests:
             for request in results:

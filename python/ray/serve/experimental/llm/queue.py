@@ -28,7 +28,7 @@ class InferenceRequest:
         return self.request.input_length + self.request.sampling_params.max_new_tokens
 
     def input_length(self) -> int:
-        return self.request.input_length 
+        return self.request.input_length + self.output_stream.num_tokens()
 
     def gen_length(self) -> int:
         return self.request.sampling_params.max_new_tokens

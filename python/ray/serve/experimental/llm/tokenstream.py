@@ -36,10 +36,11 @@ class FakeTokenStream:
     def put(self, item):
         with self._lock:
             self._data.append(item)
+            self._num_tokens += 1
 
     def num_tokens(self):
         with self._lock:
-            return len(self._data)
+            return self._num_tokens
 
     def last(self):
         with self._lock:
