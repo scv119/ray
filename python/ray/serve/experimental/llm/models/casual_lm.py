@@ -554,17 +554,14 @@ class CausalLM(Model):
         past_key_values: Optional[Any] = None,
     ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
         # Model Forward
-        try:
-            outputs = self.model.forward(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                use_cache=True,
-            )
-            return outputs.logits, outputs.past_key_values
-        except torch.cuda.OutOfMemoryError as e: 
-            raise IOError()
+        outputs = self.model.forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=True,
+        )
+        return outputs.logits, outputs.past_key_values
 
     def generate_token(
         self, batch: CausalLMBatch

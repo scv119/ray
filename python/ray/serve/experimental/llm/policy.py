@@ -41,13 +41,16 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         if len(self.oomed_requests) == 0:
             self.oom_penalty = 1
     
-    def _calculate_budget(self, max_input_length, requests, request):
-        max_input_length = max(max_input_length, request.input_length())
-        gen_length = request.gen_length()
-        for r in requests:
+    def _calculate_budget(self, in_process, selected, candidate):
+        max_input_length = candidate.input_length()
+        gen_length = candidate.gen_length()
+        for r in in_process:
             max_input_length = max(max_input_length, r.input_length())
             gen_length += r.gen_length()
-        return gen_length + max_input_length * (len(requests) + 1)
+        for r in selected:
+            max_input_length = max(max_input_length, r.input_length())
+            gen_length += r.gen_length()
+        return gen_length + max_input_length * (len(selected) + 1 + len(in_process))
 
 
     def select_new_requests(
@@ -63,14 +66,10 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         if min_num_requests and len(queue) < min_num_requests:
             return []
 
-        max_input_length = 0
-        for r in in_process_requests:
-            max_input_length = max(max_input_length, r.input_length())
-
         results = []
         while not queue.empty():
             request = queue.peek()
-            if self._calculate_budget(max_input_length, results, request) >= token_budget:
+            if self._calculate_budget(in_process_requests, results, request) >= token_budget:
                 break
             results.append(request)
             queue.pop()
@@ -99,15 +98,9 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         else:
             min_num_requests = int(batch_size * self.waiting_served_ratio)
 
-        # calculate token budget
-        # TODO: we might want consider padding as well.
-        # TODO: can we calculate the token budget based on the model?
-        token_budget = max(
-            0,
-            int(self.max_batch_total_tokens * self.oom_penalty)
-            - sum([r.total_tokens() for r in in_process_requests]),
+        return Quota(
+            min_num_requests=None, token_budget=int(self.max_batch_total_tokens * self.oom_penalty)
         )
-        return min_num_requests, token_budget
 
 
 class StaticBatchPolicy(RequestSelectionPolicy):
