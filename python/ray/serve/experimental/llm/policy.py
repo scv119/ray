@@ -7,9 +7,12 @@ from ray.serve.experimental.llm.queue import InferenceRequest, RequestQueue
 class RequestSelectionPolicy(ABC):
     @abstractmethod
     def select_new_requests(
-        self, in_process_requests: List[InferenceRequest], queue: RequestQueue
+        self, in_process_requests: List[InferenceRequest], queue: RequestQueue, has_oom: bool,
     ) -> List[InferenceRequest]:
         raise NotImplementedError
+    
+    def request_finished(self, finished_request: InferenceRequest):
+        pass
 
     # TODO: we might also interested in other events, such as when a request is
     # finished, or when a token is generated.
@@ -28,11 +31,35 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         self.max_batch_total_tokens = max_batch_total_tokens
         self.waiting_served_ratio = waiting_served_ratio
         self.max_waiting_tokens = max_waiting_tokens
+        self.waiting_tokens = 0
+        self.oom_penalty = 1.0
+        self.oomed_requests = set()
+
+    def request_finished(self, finished_request: InferenceRequest):
+        if finished_request.id in self.oomed_requests:
+            self.oomed_requests.remove(finished_request.id)
+        if len(self.oomed_requests) == 0:
+            self.oom_penalty = 1
+    
+    def _calculate_budget(self, requests, request):
+        max_input_length = request.input_length()
+        gen_length = request.gen_length()
+        for r in requests:
+            max_input_length = max(max_input_length, r.input_length)
+            gen_length += r.gen_length
+
+        
+
 
     def select_new_requests(
-        self, in_process_requests: List[InferenceRequest], queue: RequestQueue
+        self, in_process_requests: List[InferenceRequest], queue: RequestQueue, has_oom: bool,
     ) -> List[InferenceRequest]:
-        min_num_requests, token_budget = self.calculate_quota(in_process_requests)
+        if has_oom:
+            self.oom_penalty = 0.7
+            for r in in_process_requests:
+                self.oomed_requests.add(r.id)
+        min_num_requests, token_budget = self.calculate_quota(in_process_requests, has_oom)
+        self.waiting_tokens += 1
 
         if min_num_requests and len(queue) < min_num_requests:
             return []
@@ -50,18 +77,22 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
             for request in results:
                 queue.reverse_push(request)
             return []
+
+        if results:
+            self.waiting_tokens = 0
+
         return results
 
-    def calculate_quota(self, in_process_requests: List[InferenceRequest]) -> Quota:
+    def calculate_quota(self, in_process_requests: List[InferenceRequest], has_oom) -> Quota:
         if not in_process_requests:
             return Quota(
-                min_num_requests=None, token_budget=self.max_batch_total_tokens
+                min_num_requests=None, token_budget=int(self.max_batch_total_tokens * self.oom_penalty)
             )
 
         batch_size = len(in_process_requests)
 
         # calculate minmal_new_requests to be served
-        if len(in_process_requests) >= self.max_waiting_tokens:
+        if self.waiting_tokens >= self.max_waiting_tokens:
             min_num_requests = 0
         else:
             min_num_requests = int(batch_size * self.waiting_served_ratio)
@@ -71,7 +102,7 @@ class QuotaBasedRequestSelectionPolicy(RequestSelectionPolicy):
         # TODO: can we calculate the token budget based on the model?
         token_budget = max(
             0,
-            self.max_batch_total_tokens
+            int(self.max_batch_total_tokens * self.oom_penalty)
             - sum([r.total_tokens() for r in in_process_requests]),
         )
         return min_num_requests, token_budget
@@ -85,7 +116,7 @@ class StaticBatchPolicy(RequestSelectionPolicy):
         self.batch_size = batch_size
 
     def select_new_requests(
-        self, in_process_requests: List[InferenceRequest], queue: RequestQueue
+        self, in_process_requests: List[InferenceRequest], queue: RequestQueue, has_oom,
     ) -> List[InferenceRequest]:
         if in_process_requests:
             return []

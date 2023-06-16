@@ -27,6 +27,12 @@ class InferenceRequest:
     def total_tokens(self) -> int:
         return self.request.input_length + self.request.sampling_params.max_new_tokens
 
+    def input_length(self) -> int:
+        return self.request.input_length 
+
+    def gen_length(self) -> int:
+        return self.request.sampling_params.max_new_tokens
+
 
 class RequestQueue:
     def __init__(self):

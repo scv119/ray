@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import torch
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
@@ -61,6 +62,7 @@ class TransfomerTokenizer(Tokenizer):
 @dataclass
 class Stats:
     num_requests_processed: int = 0
+    num_requests_failed: int = 0
     num_active_requests: int = 0
     num_finished_requests: int = 0
     num_tokens_generated: int = 0
@@ -87,6 +89,10 @@ class Stats:
     def request_finished(self):
         self.num_active_requests -= 1
         self.num_finished_requests += 1
+
+    def request_failed(self):
+        self.num_active_requests -= 1
+        self.num_requests_failed += 1
 
     def token_generated(self, num):
         self.num_tokens_generated += num
@@ -116,6 +122,7 @@ class InferenceScheduler:
         self._lock = Lock()
         self._stop = False
         self._stats = Stats()
+        self._has_oom = False
         if not inline:
             self._thread = Thread(target=self._run_scheduling_loop)
             self._thread.start()
@@ -186,6 +193,7 @@ class InferenceScheduler:
             batch_id, in_process_requests = self._generate_next_token(
                 [batch_id, new_batch_id], in_process_requests + new_unfinished_requests
             )
+
             self._stats.iteration_finished()
             self._report_stats()
 
@@ -206,9 +214,11 @@ class InferenceScheduler:
             # wait for new requests to arrive in the queue.
             self._request_queue.wait(1)
 
+
         requests = self._request_selection_policy.select_new_requests(
-            in_process_requests, self._request_queue
+            in_process_requests, self._request_queue, self._has_oom
         )
+        self._has_oom = False
         self._stats.request_selected(requests)
         return requests
 
@@ -222,7 +232,7 @@ class InferenceScheduler:
         )
         requests, need_filter = self._process_generation_result(generations, requests)
 
-        if need_filter:
+        if need_filter and batch_id:
             batch_id = self._inference_worker.filter_requests(
                 batch_id, [r.id for r in requests]
             )
@@ -230,10 +240,15 @@ class InferenceScheduler:
 
     def _generate_next_token(
         self, batch_ids: List[int], requests: List[InferenceRequest]
-    ) -> Tuple[Optional[int], List[Generation]]:
+    ) -> Tuple[Optional[int], List[InferenceRequest]]:
         generations, batch_id = self._inference_worker.generate_next_token(
             batch_ids,
         )
+
+        # handle ooms
+        if generations is None:
+            return self._handle_ooms(batch_id, requests)
+
         requests, need_filter = self._process_generation_result(generations, requests)
 
         if batch_id is not None:
@@ -261,6 +276,37 @@ class InferenceScheduler:
                 requests[i].output_stream.put(generation.generated_text.text)
                 requests[i].output_stream.end()
                 some_request_finished = True
+                self._request_selection_policy.request_finished(requests[i])
             else:
                 unfinished_requests.append(requests[i])
         return unfinished_requests, some_request_finished
+
+
+    def _handle_recoverable_ooms(
+        self, batch_id, requests: List[InferenceRequest]
+    ): 
+        # pop last request to reduce memory overhead.
+        assert requests
+        failed_request = requests.pop()
+        self._request_queue.reverse_push(failed_request)
+        self._stats.request_failed()
+        batch_id = self._inference_worker.filter_requests(
+            batch_id, [r.id for r in requests]
+        )
+        self._has_oom = True
+        return batch_id, requests
+
+    def _handle_ooms(
+        self, batch_id, requests: List[InferenceRequest]
+    ): 
+        if batch_id:
+            return self._handle_recoverable_ooms(batch_id, requests)
+
+        # oom is not recoverable
+        while requests:
+            failed_request = requests.pop()
+            self._request_queue.reverse_push(failed_request)
+            self._stats.request_failed()
+        self._has_oom = True
+        return None, []
+

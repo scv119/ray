@@ -1,3 +1,4 @@
+import copy
 import torch
 import gc
 from typing import List, Callable, Tuple, Optional
@@ -18,6 +19,8 @@ class InferenceWorker:
     ) -> Tuple[List[Generation], int]:
         batch_state = self._model.create_batch(requests)
         generations, batch_state = self._model.generate_token(batch_state)
+        if not batch_state:
+            return generations, None
         self._batch_state_cache[batch_state.id] = batch_state
         return generations, batch_state.id
 
@@ -42,8 +45,19 @@ class InferenceWorker:
             batch_state = self._model.concatenate_batches(batch_states)
         else:
             batch_state = batch_states[0]
-
-        generations, batch_state = self._model.generate_token(batch_state)
+        
+        try:
+            # stats = batch_state.stats()
+            generations, batch_state = self._model.generate_token(batch_state)
+        except torch.cuda.OutOfMemoryError as e: 
+            #  Error happens when populate the new batch, we have to restart
+            self._batch_state_cache.clear()
+            return None, None
+        except IOError as e:
+            # assert stats == batch_state.stats()
+            # we can reuse the batch
+            self._batch_state_cache[batch_state.id] = batch_state
+            return None, batch_state.id
 
         if batch_state:
             self._batch_state_cache[batch_state.id] = batch_state
