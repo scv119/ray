@@ -780,7 +780,6 @@
         cluster_env: app_config.yaml
         cluster_compute: compute_gpu_1_gce.yaml
 
-
 - name: air_benchmark_pytorch_training_e2e_gpu_4x4_100gb
   group: AIR tests
   working_dir: air_tests/air_benchmarks
@@ -3627,6 +3626,24 @@
         cluster_compute: compute_tpl_gce.yaml
 
   alert: default
+
+- name: air_torch_runner_test
+  group: AIR tests
+  working_dir: air_tests/air_benchmarks
+
+  frequency: manual
+  team: ml
+
+  cluster:
+    byod:
+      type: gpu
+    cluster_env: app_config.yaml
+    cluster_compute: compute_gpu_1_aws.yaml
+
+  run:
+    timeout: 3600
+    script: python -m ray.air.launch --nproc_per_node=2 --nnodes=1 workloads/experimental/linear.py
+
 
 ########################
 # Alpa tests
