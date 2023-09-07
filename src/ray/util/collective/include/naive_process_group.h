@@ -110,7 +110,7 @@ class NaiveProcessGroup : public ProcessGroup {
   }
 
  private:
-  c10d::ProcessGroup &getNcclPG();
+  c10d::ProcessGroupNCCL &getNcclPG();
 
  private:
   c10::intrusive_ptr<c10d::Store> store_;

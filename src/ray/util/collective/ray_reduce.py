@@ -14,7 +14,7 @@ def all_reduce_tensors(tensors):
 
 
 def all_reduce_impl(tensor, sequence):
-  reducer_name = f"cli:{ray.get_runtime_context().get_node_id()}:{tensor.get_device()}" 
+  reducer_name = f"cli:123"
   logging.info(f"sending {tensor}, sequence: {sequence} to reducer: {reducer_name}")
   actor = ray.get_actor(reducer_name)
   return actor.allreduce.remote(tensor, sequence)

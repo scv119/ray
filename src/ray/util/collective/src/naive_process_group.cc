@@ -82,7 +82,8 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 // Modify the implementation to conduct real communication asynchronously
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
-  if (!CallRayReduce(tensors, opts)) {
+  //if (!CallRayReduce(tensors, opts)) {
+  if (true) {
     // if Ray Reduce doesn't support it, fallback to NCCL reduce.
     return c10::make_intrusive<NaiveWork>(
         c10d::OpType::ALLREDUCE, getNcclPG().allreduce(tensors, opts)->getFuture());
@@ -196,7 +197,7 @@ c10::intrusive_ptr<ProcessGroup> NaiveProcessGroup::createNaiveProcessGroup(
   return c10::make_intrusive<NaiveProcessGroup>(store, rank, size);
 }
 
-c10d::ProcessGroup &NaiveProcessGroup::getNcclPG() {
+c10d::ProcessGroupNCCL &NaiveProcessGroup::getNcclPG() {
   if (!ncclPG_) {
     ncclPG_ = c10::make_intrusive<c10d::ProcessGroupNCCL>(
         c10::make_intrusive<c10d::PrefixStore>("nccl", store_),
